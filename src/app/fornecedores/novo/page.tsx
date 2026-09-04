@@ -1,0 +1,4 @@
+import Link from "next/link";
+import { createSupplier } from "@/app/cadastros/actions";
+import { PageHeader } from "@/components/page-header";
+export default async function Page({ searchParams }: { searchParams: Promise<{ error?: string }> }) { const { error } = await searchParams; return <><PageHeader eyebrow="Cadastro" title="Novo fornecedor" /><section className="wide-card form-card">{error && <div className="form-error">{error}</div>}<form action={createSupplier} className="entity-form"><label><span>Nome do fornecedor</span><input name="name" required maxLength={120} autoFocus /></label><label><span>Logo (PNG, JPG, WebP ou SVG · até 2 MB)</span><input name="logo" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" /></label><div className="form-actions"><Link className="secondary-button" href="/fornecedores">Cancelar</Link><button className="primary-button" type="submit">Salvar fornecedor</button></div></form></section></>; }

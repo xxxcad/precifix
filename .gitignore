@@ -1,0 +1,14 @@
+node_modules/
+.next/
+out/
+coverage/
+.env*
+!.env.example
+.analysis/
+.pnpm-store/
+*.tsbuildinfo
+inicio.txt
+*.xlsx
+*.docx
+server-*.log
+supabase/.temp/
