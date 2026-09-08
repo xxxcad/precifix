@@ -5,7 +5,7 @@ import { ArrowDown, BarChart3, Check, ChevronDown, ChevronUp, GitCompareArrows, 
 import { calculatePricing, calculateTargetPrice } from "@/domain/pricing/engine";
 import type { FiscalRuleKey, MarginClassificationRule, MarketplaceKey, MarketplaceRuleSnapshot, MarketplaceShippingRule, PricingResult, RegionKey, RegionPricingResult, ShippingResolution } from "@/domain/pricing/types";
 import { manualShipping, overrideShipping, resolveAmazonShipping, resolveMercadoLivreShipping } from "@/domain/pricing/shipping";
-import { marginClassifications, marketplaceNames, products as demoProducts, type DemoProduct } from "@/data/demo-data";
+import { marginClassifications, marketplaceNames, type DemoProduct } from "@/data/demo-data";
 import { resolveMarketplaceRule, type MarketplaceRuleMap } from "@/domain/pricing/marketplace-rules";
 import { formatMoney, formatPercent } from "@/lib/format";
 import { StatusPill } from "./status-pill";
@@ -156,8 +156,8 @@ function PricingDetailsModal({ item, onClose }: { item: SavedPricing; onClose: (
   </div>;
 }
 
-export function PricingWorkbench({ initialProducts = demoProducts, marketplaceRules = {}, classifications = marginClassifications, fiscalRules = [], shippingRule = null, amazonShippingRule = null }: { initialProducts?: DemoProduct[]; marketplaceRules?: MarketplaceRuleMap; classifications?: MarginClassificationRule[]; fiscalRules?: ManualFiscalRule[]; shippingRule?: MarketplaceShippingRule | null; amazonShippingRule?: MarketplaceShippingRule | null }) {
-  const catalogProducts = initialProducts.length ? initialProducts : demoProducts;
+export function PricingWorkbench({ initialProducts = [], marketplaceRules = {}, classifications = marginClassifications, fiscalRules = [], shippingRule = null, amazonShippingRule = null }: { initialProducts?: DemoProduct[]; marketplaceRules?: MarketplaceRuleMap; classifications?: MarginClassificationRule[]; fiscalRules?: ManualFiscalRule[]; shippingRule?: MarketplaceShippingRule | null; amazonShippingRule?: MarketplaceShippingRule | null }) {
+  const catalogProducts = initialProducts;
   const [productId, setProductId] = useState("");
   const [query, setQuery] = useState("");
   const [productListOpen, setProductListOpen] = useState(false);

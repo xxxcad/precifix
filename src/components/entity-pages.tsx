@@ -4,7 +4,7 @@ import type { Route } from "next";
 import { CheckCircle2, Edit3, Plus } from "lucide-react";
 import { PageHeader } from "./page-header";
 import { MarketplaceBrand } from "./marketplace-brand";
-import { marketplaceNames, products as demoProducts, type DemoProduct } from "@/data/demo-data";
+import { marketplaceNames, type DemoProduct } from "@/data/demo-data";
 import type { MarketplaceKey } from "@/domain/pricing/types";
 import type { CostChangeHistoryItem, HistoryPageResult, MarketplaceRuleCard, NewProductHistoryItem, PricingHistoryItem, SupplierItem } from "@/lib/data/catalog";
 import { formatMoney, formatPercent } from "@/lib/format";
@@ -13,7 +13,7 @@ import { ProductsTable } from "./products-table";
 import { updateMarginClassifications } from "@/app/configuracoes/actions";
 import type { MarginClassificationRule } from "@/domain/pricing/types";
 
-export function ProductsPage({ products = demoProducts }: { products?: DemoProduct[] }) {
+export function ProductsPage({ products = [] }: { products?: DemoProduct[] }) {
   return <><PageHeader eyebrow="Cadastro" title="Produtos" actions={<Link className="secondary-button" href="/produtos/novo"><Plus size={16} />Novo produto</Link>} /><section className="wide-card"><ProductsTable products={products} /></section></>;
 }
 

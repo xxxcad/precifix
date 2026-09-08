@@ -3,9 +3,14 @@ import { NextResponse, type NextRequest } from "next/server";
 import type { Database } from "./database.types";
 
 export async function updateSession(request: NextRequest) {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
-  if (!url || !key) return NextResponse.next({ request });
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
+  const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY?.trim();
+  if (!url || !key) {
+    return new NextResponse("Serviço temporariamente indisponível: configuração pendente.", {
+      status: 503,
+      headers: { "Cache-Control": "no-store" },
+    });
+  }
 
   let response = NextResponse.next({ request });
   const supabase = createServerClient<Database>(url, key, {

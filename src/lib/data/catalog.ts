@@ -1,4 +1,5 @@
-import { marginClassifications as demoMarginClassifications, products as demoProducts, type DemoProduct } from "@/data/demo-data";
+import type { DemoProduct } from "@/data/demo-data";
+import { redirect } from "next/navigation";
 import type { FiscalRuleKey, ListingType, MarginClassificationRule, MarketplaceKey, MarketplaceRuleSnapshot, MarketplaceShippingRule } from "@/domain/pricing/types";
 import type { MarketplaceRuleMap } from "@/domain/pricing/marketplace-rules";
 import type { Json } from "@/lib/supabase/database.types";
@@ -19,17 +20,15 @@ const marketplaceDefaults: Record<MarketplaceKey, string> = { MERCADO_LIVRE: "0.
 
 export async function loadMarginClassifications(): Promise<MarginClassificationRule[]> {
   const supabase = await createClient();
-  if (!supabase) return demoMarginClassifications;
   const { data, error } = await supabase.from("margin_classifications").select("id,label,tone,min_percent,max_percent").eq("active", true).order("min_percent", { ascending: true, nullsFirst: true });
-  if (error || !data?.length) return demoMarginClassifications;
+  if (error || !data?.length) throw new Error("Não foi possível carregar as faixas de margem cadastradas.");
   return (data ?? []).map((item) => ({ id: item.id, label: item.label as MarginClassificationRule["label"], tone: item.tone as MarginClassificationRule["tone"], minPercent: item.min_percent == null ? null : value(item.min_percent), maxPercent: item.max_percent == null ? null : value(item.max_percent) }));
 }
 
-export async function loadCatalogProducts({ includeInactive = false }: { includeInactive?: boolean } = {}): Promise<{ products: DemoProduct[]; source: "database" | "demo" }> {
+export async function loadCatalogProducts({ includeInactive = false }: { includeInactive?: boolean } = {}): Promise<{ products: DemoProduct[]; source: "database" }> {
   const supabase = await createClient();
-  if (!supabase) return { products: demoProducts, source: "demo" };
   const { data: claims } = await supabase.auth.getClaims();
-  if (!claims?.claims?.sub) return { products: demoProducts, source: "demo" };
+  if (!claims?.claims?.sub) redirect("/login");
 
   let productsQuery = supabase.from("products").select("*").order("sku").limit(1000);
   if (!includeInactive) productsQuery = productsQuery.eq("active", true);
@@ -49,9 +48,7 @@ export async function loadCatalogProducts({ includeInactive = false }: { include
     })(),
     supabase.from("marketplaces").select("id,code").eq("active", true),
   ]);
-  if (productsResult.error || suppliersResult.error || rulesResult.error || configsResult.error || marketplacesResult.error || !productsResult.data?.length) {
-    return { products: demoProducts, source: "demo" };
-  }
+  if (productsResult.error || suppliersResult.error || rulesResult.error || configsResult.error || marketplacesResult.error) throw new Error("Não foi possível consultar o catálogo. Tente novamente ou contate o administrador.");
 
   const suppliers = new Map((suppliersResult.data ?? []).map((row) => [row.id, row.name]));
   const rules = new Map((rulesResult.data ?? []).map((row) => [row.id, row.code as FiscalRuleKey]));
@@ -65,7 +62,7 @@ export async function loadCatalogProducts({ includeInactive = false }: { include
 
   return {
     source: "database",
-    products: (productsResult.data as ProductRow[]).map((row) => {
+    products: ((productsResult.data ?? []) as ProductRow[]).map((row) => {
       const productConfigs = configs.get(row.id) ?? {};
       const marketplace = Object.fromEntries((Object.keys(marketplaceDefaults) as MarketplaceKey[]).map((key) => {
         const listingType = key === "MERCADO_LIVRE" ? "CLASSICO" : "PADRAO";
@@ -171,9 +168,8 @@ export async function loadMarketplaceRuleCards(): Promise<MarketplaceRuleCard[]>
 export interface SupplierItem { id: string; name: string; active: boolean; logoUrl: string | null; productCount: number }
 export async function loadSuppliers(): Promise<SupplierItem[]> {
   const supabase = await createClient();
-  if (!supabase) return Array.from(new Set(demoProducts.map((item) => item.supplierName))).sort().map((name) => ({ id: name, name, active: true, logoUrl: null, productCount: demoProducts.filter((item) => item.supplierName === name).length }));
   const [supplierResult, productResult] = await Promise.all([supabase.from("suppliers").select("id,name,active,logo_path").order("name"), supabase.from("products").select("supplier_id")]);
-  if (supplierResult.error) return [];
+  if (supplierResult.error || productResult.error) throw new Error("Não foi possível consultar os fornecedores.");
   return Promise.all((supplierResult.data ?? []).map(async (row) => {
     const signed = row.logo_path ? await supabase.storage.from("supplier-logos").createSignedUrl(row.logo_path, 3600) : null;
     return { id: row.id, name: row.name, active: row.active, logoUrl: signed?.data?.signedUrl ?? null, productCount: (productResult.data ?? []).filter((product) => product.supplier_id === row.id).length };
