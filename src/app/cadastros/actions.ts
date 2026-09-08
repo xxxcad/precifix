@@ -18,7 +18,7 @@ export async function createSupplier(formData: FormData) {
     try { await saveSupplierLogo(supabase, supplier.id, logo); }
     catch { fail(`/fornecedores/${supplier.id}/editar`, "Fornecedor criado, mas não foi possível gravar a logo. Use PNG, JPG, WebP ou SVG de até 2 MB."); }
   }
-  revalidatePath("/fornecedores"); redirect("/fornecedores");
+  revalidatePath("/fornecedores"); redirect("/fornecedores?success=Fornecedor+criado+com+sucesso");
 }
 
 async function saveSupplierLogo(supabase: NonNullable<Awaited<ReturnType<typeof createClient>>>, supplierId: string, file: File) {
@@ -45,7 +45,7 @@ export async function updateSupplier(formData: FormData) {
   if (error) fail(`/fornecedores/${parsed.data.id}/editar`, "Não foi possível atualizar o fornecedor");
   const logo = formData.get("logo");
   if (logo instanceof File && logo.size > 0) { try { await saveSupplierLogo(supabase, parsed.data.id, logo); } catch { fail(`/fornecedores/${parsed.data.id}/editar`, "Logo inválido ou maior que 2 MB"); } }
-  revalidatePath("/fornecedores"); redirect("/fornecedores");
+  revalidatePath("/fornecedores"); redirect("/fornecedores?success=Fornecedor+atualizado+com+sucesso");
 }
 
 export async function deleteSupplier(formData: FormData) {
@@ -67,7 +67,7 @@ export async function deleteSupplier(formData: FormData) {
   if (error) return fail(`/fornecedores/${parsed.data.id}/editar`, "Não foi possível excluir o fornecedor");
   if (supplier?.logo_path) await supabase.storage.from("supplier-logos").remove([supplier.logo_path]);
   revalidatePath("/fornecedores");
-  redirect("/fornecedores");
+  redirect("/fornecedores?success=Fornecedor+excluído+com+sucesso");
 }
 
 const productPercent = z.coerce.number().min(0).max(100).transform((value) => value / 100);
@@ -108,7 +108,7 @@ export async function createProduct(formData: FormData) {
   if (error?.code === "42501") fail("/produtos/novo", "Seu usuário não possui permissão para cadastrar produtos. Entre novamente ou solicite acesso ao administrador.");
   if (error) fail("/produtos/novo", "Não foi possível salvar o produto. Revise os dados informados e tente novamente.");
   if (!product || await saveProductMarketplaceRates(supabase, product.id, data)) return fail(product ? `/produtos/${product.id}/editar` : "/produtos/novo", "Produto salvo, mas não foi possível gravar as taxas dos marketplaces");
-  revalidatePath("/produtos"); redirect("/produtos");
+  revalidatePath("/produtos"); redirect("/produtos?success=Produto+criado+com+sucesso");
 }
 
 const updateProductSchema = z.object({ ...productFields, id: z.uuid(), active: z.enum(["true", "false"]) }).superRefine(validateProduct);
@@ -141,5 +141,5 @@ export async function deleteProduct(formData: FormData) {
   if (error) return fail(`/produtos/${parsed.data.id}/editar`, "Não foi possível excluir o produto");
   revalidatePath("/produtos");
   revalidatePath("/reprecificacao");
-  redirect("/produtos");
+  redirect("/produtos?success=Produto+excluído+com+sucesso");
 }

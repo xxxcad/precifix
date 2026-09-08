@@ -28,7 +28,7 @@ export async function updateMarketplace(formData: FormData) {
   const updates = await Promise.all(validBands.map((band) => supabase.from("marketplace_fee_bands").update({ min_price: band.min, max_price: band.max, percentage_rate: band.percentage, fixed_fee: band.fixed, label: band.max === null ? `${money(band.min)} ou mais` : band.min === 0 ? `Até ${money(band.max)}` : `De ${money(band.min)} a ${money(band.max)}` }).eq("id", band.id)));
   if (updates.some((result) => result.error)) fail(code, "Não foi possível atualizar as faixas");
   for (const ruleSetId of formData.getAll("ruleSetId").map(String)) if (z.uuid().safeParse(ruleSetId).success) await supabase.from("marketplace_fee_rule_sets").update({ change_reason: parsed.data.reason }).eq("id", ruleSetId);
-  revalidatePath("/marketplaces"); revalidatePath("/reprecificacao"); redirect("/marketplaces");
+  revalidatePath("/marketplaces"); revalidatePath("/reprecificacao"); redirect("/marketplaces?success=Marketplace+atualizado+com+sucesso");
 }
 
 export async function publishMercadoLivreShippingRule(formData: FormData) {

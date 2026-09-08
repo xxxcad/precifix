@@ -32,7 +32,7 @@ export async function createFiscalRule(formData: FormData) {
   if (!userId) return fail("/regras-fiscais/nova", "Sessão expirada");
   const { error } = await supabase.from("fiscal_rules").insert(values(parsed.data, userId));
   if (error) return fail("/regras-fiscais/nova", "Não foi possível salvar. Verifique se o código já existe e se você é administrador.");
-  revalidatePath("/regras-fiscais"); redirect("/regras-fiscais" as Route);
+  revalidatePath("/regras-fiscais"); redirect("/regras-fiscais?success=Regra+fiscal+criada+com+sucesso" as Route);
 }
 
 export async function updateFiscalRule(formData: FormData) {
@@ -45,5 +45,5 @@ export async function updateFiscalRule(formData: FormData) {
   if (!userId) return fail(`/regras-fiscais/${id}/editar`, "Sessão expirada");
   const { error } = await supabase.from("fiscal_rules").update(values(parsed.data, userId)).eq("id", parsed.data.id);
   if (error) return fail(`/regras-fiscais/${id}/editar`, "Não foi possível atualizar. Verifique duplicidade e permissão.");
-  revalidatePath("/regras-fiscais"); revalidatePath("/produtos"); revalidatePath("/reprecificacao"); redirect("/regras-fiscais" as Route);
+  revalidatePath("/regras-fiscais"); revalidatePath("/produtos"); revalidatePath("/reprecificacao"); redirect("/regras-fiscais?success=Regra+fiscal+atualizada+com+sucesso" as Route);
 }
