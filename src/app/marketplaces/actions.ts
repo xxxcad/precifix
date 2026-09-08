@@ -31,22 +31,6 @@ export async function updateMarketplace(formData: FormData) {
   revalidatePath("/marketplaces"); revalidatePath("/reprecificacao"); redirect("/marketplaces");
 }
 
-export async function updateAmazonRateForAll(formData: FormData) {
-  const parsed = z.object({ marketplaceId: z.uuid(), amazonRate: z.coerce.number().min(0).max(100).transform((value) => value / 100), reason: z.string().trim().min(5) }).safeParse({ marketplaceId: formData.get("marketplaceId"), amazonRate: formData.get("amazonRate"), reason: formData.get("reason") });
-  if (!parsed.success) return fail("amazon", "Informe uma tarifa Amazon válida e o motivo da alteração");
-  const supabase = await createClient();
-  if (!supabase) return fail("amazon", "Supabase não configurado");
-  const { data: claims } = await supabase.auth.getClaims(); const userId = claims?.claims?.sub;
-  const { data: profile } = userId ? await supabase.from("profiles").select("role,active").eq("id", userId).single() : { data: null };
-  if (!profile?.active || profile.role !== "admin") return fail("amazon", "Somente administradores podem atualizar todas as tarifas");
-  const { data: marketplace } = await supabase.from("marketplaces").select("id").eq("id", parsed.data.marketplaceId).eq("code", "AMAZON").single();
-  if (!marketplace) return fail("amazon", "Marketplace Amazon não encontrado");
-  const { error } = await supabase.from("product_marketplace_configs").update({ commission_rate_override: parsed.data.amazonRate, updated_at: new Date().toISOString() }).eq("marketplace_id", marketplace.id).eq("listing_type", "PADRAO").eq("active", true);
-  if (error) return fail("amazon", "Não foi possível atualizar as tarifas dos produtos");
-  revalidatePath("/produtos"); revalidatePath("/precificar"); revalidatePath("/reprecificacao");
-  redirect(`/marketplaces/amazon/editar?success=${encodeURIComponent("Tarifa Amazon atualizada em todos os produtos ativos")}` as Route);
-}
-
 export async function publishMercadoLivreShippingRule(formData: FormData) {
   const code = "mercado_livre";
   const supabase = await createClient();

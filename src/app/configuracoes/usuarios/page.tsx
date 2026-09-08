@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { PageHeader } from "@/components/page-header";
+import { UserManagementActions } from "@/components/user-management-actions";
 import { createClient } from "@/lib/supabase/server";
 import { createUser } from "./actions";
 
@@ -9,7 +10,6 @@ const roleLabels = { viewer: "Consulta", analyst: "Analista", admin: "Administra
 export default async function UsersPage({ searchParams }: { searchParams: Promise<{ error?: string; message?: string }> }) {
   const params = await searchParams;
   const supabase = await createClient();
-  if (!supabase) redirect("/login");
   const { data: userData } = await supabase.auth.getUser();
   if (!userData.user) redirect("/login");
   const { data: profile } = await supabase.from("profiles").select("role,active").eq("id", userData.user.id).maybeSingle();
@@ -17,7 +17,7 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
   const { data: users } = await supabase.from("profiles").select("id,display_name,role,active,created_at").order("created_at", { ascending: false });
 
   return <>
-    <PageHeader eyebrow="Administração" title="Usuários" description="Somente administradores podem cadastrar novos acessos." />
+    <PageHeader eyebrow="Administração" title="Usuários" description="Somente administradores podem cadastrar e gerenciar acessos." />
     <section className="wide-card form-card">
       <h2>Novo usuário</h2>
       {params.error && <p className="form-error" role="alert">{params.error}</p>}
@@ -32,7 +32,14 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
     </section>
     <section className="wide-card">
       <h2>Usuários cadastrados</h2>
-      <div className="data-table"><div className="table-row users-list table-head"><span>Nome</span><span>Função</span><span>Status</span></div>{(users ?? []).map((user) => <div className="table-row users-list" key={user.id}><span><strong>{user.display_name ?? "Usuário"}</strong></span><span>{roleLabels[user.role as keyof typeof roleLabels] ?? user.role}</span><span className={user.active ? "active-state" : "extinct-state"}>{user.active ? "Ativo" : "Inativo"}</span></div>)}</div>
+      <div className="data-table">
+        <div className="table-row users-list table-head"><span>Nome</span><span>Status</span><span>Ações</span></div>
+        {(users ?? []).map((user) => <div className="table-row users-list" key={user.id}>
+          <span><strong>{user.display_name ?? "Usuário"}</strong><small>{roleLabels[user.role as keyof typeof roleLabels] ?? user.role}</small></span>
+          <span className={user.active ? "active-state" : "extinct-state"}>{user.active ? "Ativo" : "Inativo"}</span>
+          <span><UserManagementActions userId={user.id} userName={user.display_name ?? "Usuário"} role={user.role} isCurrentUser={user.id === userData.user.id} /></span>
+        </div>)}
+      </div>
     </section>
   </>;
 }

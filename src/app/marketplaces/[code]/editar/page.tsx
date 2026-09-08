@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { updateAmazonRateForAll, updateMarketplace } from "@/app/marketplaces/actions";
+import { updateMarketplace } from "@/app/marketplaces/actions";
 import { MarketplaceBrand } from "@/components/marketplace-brand";
 import { AmazonShippingRuleForm } from "@/components/amazon-shipping-rule-form";
 import { MlShippingRuleForm } from "@/components/ml-shipping-rule-form";
@@ -42,7 +42,6 @@ export default async function Page({ params, searchParams }: { params: Promise<{
         {(ruleSets ?? []).map((set) => <div className="fee-editor" key={set.id}><h2>Faixas tarifárias vigentes</h2><p>Edite os limites em reais. A última faixa deve permanecer sem limite máximo.</p><input type="hidden" name="ruleSetId" value={set.id} />{(bands ?? []).filter((band) => band.rule_set_id === set.id).map((band) => <div className="fee-editor-row" key={band.id}><input type="hidden" name="bandId" value={band.id} /><input type="hidden" name="bandRuleSetId" value={set.id} /><span>{band.label}</span><label><span>De (R$)</span><input name="minPrice" type="number" min="0" step="0.01" defaultValue={band.min_price} disabled={!isAdmin} required /></label><label><span>Até (R$)</span><input name="maxPrice" type="number" min="0.01" step="0.01" defaultValue={band.max_price ?? ""} placeholder="Ou mais" disabled={!isAdmin} /></label><label><span>Comissão decimal</span><input name="percentageRate" type="number" min="0" max="1" step="0.00000001" defaultValue={band.percentage_rate} disabled={!isAdmin} required /></label><label><span>Tarifa fixa</span><input name="fixedFee" type="number" min="0" step="0.01" defaultValue={band.fixed_fee} disabled={!isAdmin} required /></label></div>)}</div>)}
         {isAdmin && <><label><span>Motivo da alteração</span><input name="reason" required minLength={5} placeholder="Ex.: atualização de setembro" /></label><div className="form-actions"><Link className="secondary-button" href="/marketplaces">Cancelar</Link><button className="primary-button" type="submit">Salvar configurações</button></div></>}
       </form>
-      {code === "AMAZON" && isAdmin && <form action={updateAmazonRateForAll} className="entity-form fee-editor"><input type="hidden" name="marketplaceId" value={marketplace.id} /><h2>Atualização em massa da Amazon</h2><p>Substitui a tarifa Amazon de todos os produtos ativos e envia os itens para reprecificação.</p><label><span>Nova tarifa Amazon (%)</span><input name="amazonRate" type="number" min="0" max="100" step="0.0001" required /></label><label><span>Motivo da atualização</span><input name="reason" required minLength={5} /></label><div className="form-actions"><button className="primary-button" type="submit">Atualizar todos os produtos</button></div></form>}
     </section>
     {shippingRule && <section className="wide-card form-card marketplace-edit">{code === "AMAZON" ? <AmazonShippingRuleForm rule={shippingRule} isAdmin={isAdmin} /> : <MlShippingRuleForm rule={shippingRule} isAdmin={isAdmin} />}</section>}
   </>;

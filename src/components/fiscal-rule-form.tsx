@@ -12,8 +12,8 @@ const rateFields = [
   ["outputIcmsNorthNortheastRate", "ICMS saída Norte/Nordeste", "output_icms_north_northeast_rate"],
 ] as const;
 
-export function FiscalRuleForm({ action, rule, error }: { action: (formData: FormData) => void | Promise<void>; rule?: FiscalRuleValues; error?: string }) {
-  return <section className="wide-card form-card">{error && <div className="form-error">{error}</div>}<form action={action} className="entity-form form-grid">
+export function FiscalRuleForm({ action, rule, error, canEdit = true }: { action: (formData: FormData) => void | Promise<void>; rule?: FiscalRuleValues; error?: string; canEdit?: boolean }) {
+  return <section className="wide-card form-card">{error && <div className="form-error">{error}</div>}{!canEdit && <div className="notice-card"><div><strong>Acesso somente para consulta</strong><p>Apenas administradores podem alterar regras fiscais.</p></div></div>}<fieldset disabled={!canEdit} className="readonly-fieldset"><form action={action} className="entity-form form-grid">
     {rule?.id && <input type="hidden" name="id" value={rule.id} />}
     <label><span>Código</span><input name="code" defaultValue={rule?.code ?? ""} placeholder="EX.: NACIONAL_ESPECIAL" required /></label>
     <label><span>Nome</span><input name="name" defaultValue={rule?.name ?? ""} required /></label>
@@ -22,5 +22,5 @@ export function FiscalRuleForm({ action, rule, error }: { action: (formData: For
     <div className="form-section-title full"><strong>ICMS de saída</strong><small>Somente estes valores pertencem à regra fiscal. Informe 18 para 18%.</small></div>
     {rateFields.map(([name, label, key]) => <label key={name}><span>{label} (%)</span><input name={name} type="number" min="0" max="100" step="0.0001" defaultValue={Number(rule?.[key] ?? 0) * 100} required /></label>)}
     <div className="form-actions full"><Link className="secondary-button" href={"/regras-fiscais" as Route}>Cancelar</Link><button className="primary-button" type="submit">Salvar regra fiscal</button></div>
-  </form></section>;
+  </form></fieldset></section>;
 }

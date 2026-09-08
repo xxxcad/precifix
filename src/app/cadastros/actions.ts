@@ -61,7 +61,7 @@ export async function deleteSupplier(formData: FormData) {
     supabase.from("products").select("id", { count: "exact", head: true }).eq("supplier_id", parsed.data.id),
     supabase.from("suppliers").select("logo_path").eq("id", parsed.data.id).single(),
   ]);
-  if (!profile?.active || profile.role !== "admin") return fail(`/fornecedores/${parsed.data.id}/editar`, "Somente administradores podem excluir fornecedores");
+  if (!profile?.active || !["analyst", "admin"].includes(profile.role)) return fail(`/fornecedores/${parsed.data.id}/editar`, "Seu usuário não possui permissão para excluir fornecedores");
   if ((productCount ?? 0) > 0) return fail(`/fornecedores/${parsed.data.id}/editar`, `Não é possível excluir: existem ${productCount} produto(s) vinculado(s) a este fornecedor`);
   const { error } = await supabase.from("suppliers").delete().eq("id", parsed.data.id);
   if (error) return fail(`/fornecedores/${parsed.data.id}/editar`, "Não foi possível excluir o fornecedor");
@@ -136,7 +136,7 @@ export async function deleteProduct(formData: FormData) {
   const userId = claims?.claims?.sub;
   if (!userId) return fail(`/produtos/${parsed.data.id}/editar`, "Sessão expirada");
   const { data: profile } = await supabase.from("profiles").select("role,active").eq("id", userId).single();
-  if (!profile?.active || profile.role !== "admin") return fail(`/produtos/${parsed.data.id}/editar`, "Somente administradores podem excluir produtos");
+  if (!profile?.active || !["analyst", "admin"].includes(profile.role)) return fail(`/produtos/${parsed.data.id}/editar`, "Seu usuário não possui permissão para excluir produtos");
   const { error } = await supabase.from("products").delete().eq("id", parsed.data.id);
   if (error) return fail(`/produtos/${parsed.data.id}/editar`, "Não foi possível excluir o produto");
   revalidatePath("/produtos");

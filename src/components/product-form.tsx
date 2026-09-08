@@ -21,7 +21,7 @@ const outputDetails = [
   ["output_icms_south_southeast_rate", "ICMS saída Sul/Sudeste"], ["output_icms_north_northeast_rate", "ICMS saída Norte/Nordeste"],
 ] as const;
 
-export function ProductForm({ action, suppliers, rules, product, marketplaceRates, error, success, isAdmin = false }: { action: (formData: FormData) => void | Promise<void>; suppliers: Supplier[]; rules: ProductFiscalRule[]; product?: Product; marketplaceRates?: ProductMarketplaceRates; error?: string; success?: string; isAdmin?: boolean }) {
+export function ProductForm({ action, suppliers, rules, product, marketplaceRates, error, success, canEdit = true, canDelete = false }: { action: (formData: FormData) => void | Promise<void>; suppliers: Supplier[]; rules: ProductFiscalRule[]; product?: Product; marketplaceRates?: ProductMarketplaceRates; error?: string; success?: string; canEdit?: boolean; canDelete?: boolean }) {
   const [ruleId, setRuleId] = useState(product?.fiscal_rule_id ?? "");
   const [hasFixedPrice, setHasFixedPrice] = useState(product?.has_fixed_price ?? false);
   const [packaging, setPackaging] = useState({ weight: String(product?.package_weight_kg ?? ""), height: String(product?.package_height_cm ?? ""), width: String(product?.package_width_cm ?? ""), length: String(product?.package_length_cm ?? "") });
@@ -33,7 +33,7 @@ export function ProductForm({ action, suppliers, rules, product, marketplaceRate
   }, [success]);
   const selectedRule = rules.find((rule) => rule.id === ruleId);
   const cubicWeight = [packaging.height, packaging.width, packaging.length].every((item) => Number(item) > 0) ? Number(packaging.height) * Number(packaging.width) * Number(packaging.length) / 6000 : null;
-  return <section className="wide-card form-card">{error && <div className="form-error">{error}</div>}{showSuccess && <div className="form-success product-save-success" role="status">{success}</div>}<form action={action} className="entity-form form-grid">
+  return <section className="wide-card form-card">{error && <div className="form-error">{error}</div>}{showSuccess && <div className="form-success product-save-success" role="status">{success}</div>}{!canEdit && <div className="notice-card"><div><strong>Acesso somente para consulta</strong><p>Seu perfil pode visualizar os dados, mas não alterar este produto.</p></div></div>}<fieldset disabled={!canEdit} className="readonly-fieldset"><form action={action} className="entity-form form-grid">
     {product && <input type="hidden" name="id" value={product.id} />}
     <label><span>SKU</span><input name="sku" defaultValue={product?.sku ?? ""} required /></label>
     <label><span>Código do fornecedor</span><input name="manufacturerCode" defaultValue={product?.manufacturer_code ?? ""} /></label>
@@ -60,5 +60,5 @@ export function ProductForm({ action, suppliers, rules, product, marketplaceRate
     <label><span>Taxa Tarifa Amazon (%)</span><input name="amazonRate" type="number" min="0" max="100" step="0.0001" defaultValue={marketplaceRates?.amazon != null ? marketplaceRates.amazon * 100 : undefined} required /></label>
     {selectedRule && <><div className="form-section-title full"><strong>ICMS de saída da regra fiscal</strong><small>Preenchidos automaticamente conforme a regra selecionada.</small></div>{outputDetails.map(([key, label]) => <label key={key}><span>{label}</span><input value={`${(Number(selectedRule[key]) * 100).toLocaleString("pt-BR", { maximumFractionDigits: 4 })}%`} readOnly /></label>)}</>}
     <div className="form-actions full">{product && <Link className="secondary-button" href={`/produtos/${product.id}/historico`}>Histórico de custo</Link>}<Link className="secondary-button" href="/produtos">Cancelar</Link><button className="primary-button" type="submit">{product ? "Salvar alterações" : "Salvar produto"}</button></div>
-  </form>{product && isAdmin && <form action={deleteProduct} className="danger-zone" onSubmit={(event) => { if (!window.confirm(`Excluir definitivamente o produto ${product.sku}? Esta ação não pode ser desfeita.`)) event.preventDefault(); }}><input type="hidden" name="id" value={product.id} /><div><strong>Excluir produto</strong><p>Remove definitivamente o produto e seus dados relacionados.</p></div><button className="danger-button" type="submit">Excluir produto</button></form>}</section>;
+  </form></fieldset>{product && canDelete && <form action={deleteProduct} className="danger-zone" onSubmit={(event) => { if (!window.confirm(`Excluir definitivamente o produto ${product.sku}? Esta ação não pode ser desfeita.`)) event.preventDefault(); }}><input type="hidden" name="id" value={product.id} /><div><strong>Excluir produto</strong><p>Remove definitivamente o produto e seus dados relacionados.</p></div><button className="danger-button" type="submit">Excluir produto</button></form>}</section>;
 }
