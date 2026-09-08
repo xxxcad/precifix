@@ -65,6 +65,17 @@ describe("limites configuráveis", () => {
     { id:"d",label:"d",minPrice:"200",maxPrice:null,percentageRate:"0.14",fixedFee:"26",effectiveFrom:"2026-01-01",effectiveTo:null },
   ];
   it.each([["79.99","4"],["80","16"],["100","20"],["200","26"]])("resolve Shopee em %s", (price, fixed) => expect(resolveFeeBand(price, bands).fixedFee).toBe(fixed));
+
+  it("usa comissão e tarifa da faixa sem limite da Shopee", () => {
+    const band = resolveFeeBand("539", bands);
+    expect(band.label).toBe("d");
+    expect(band.percentageRate).toBe("0.14");
+    expect(band.fixedFee).toBe("26");
+
+    const result = calculatePricing(input({ marketplace: "SHOPEE", rule: "ISENTO", cost: "0", sale: "539", rate: "0.14", fixed: "26" }));
+    expect(result.regions.SP.marketplacePercentageFee).toBe("75.46");
+    expect(result.regions.SP.marketplaceFixedFee).toBe("26");
+  });
   it("classifica exatamente 10% como OK", () => expect(classifyMargin("0.10", marginClassifications).label).toBe("OK"));
   it("calcula o menor preço que garante a margem alvo", () => {
     const fixture = input({ marketplace:"MERCADO_LIVRE", rule:"NACIONAL", cost:"25", icmsIn:"0.18", sale:"50", rate:"0.12", freight:"8", icmsOut:"0.18" });

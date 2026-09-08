@@ -206,14 +206,14 @@ export function PricingWorkbench({ initialProducts = [], marketplaceRules = {}, 
   const hasSelectedProduct = manualMode || Boolean(selectedCatalogProduct);
   const productRule = useMemo(() => resolveMarketplaceRule(product, marketplace, premium, marketplaceRules), [product, marketplace, premium, marketplaceRules]);
   const rateKey = `${product.productId}:${marketplace}:${productRule.listingType}`;
-  const storedRatePercent = temporaryRates[rateKey];
+  const storedRatePercent = marketplace === "SHOPEE" ? undefined : temporaryRates[rateKey];
   const practicedRatePercent = storedRatePercent ?? String(Math.round(Number(productRule.feeBands[0]?.percentageRate ?? 0) * 1000000) / 10000);
   const rateEditing = Boolean(editableRateKeys[rateKey]);
   const temporaryRateDecimal = Number(practicedRatePercent.replace(",", ".")) / 100;
   const marketplaceRebateValue = rebateType === "PERCENT" ? percentToDecimal(rebateValue || "0") : rebateValue || "0";
-  const rule = useMemo(() => Number.isFinite(temporaryRateDecimal) && temporaryRateDecimal >= 0 && temporaryRateDecimal <= 1
+  const rule = useMemo(() => marketplace !== "SHOPEE" && Number.isFinite(temporaryRateDecimal) && temporaryRateDecimal >= 0 && temporaryRateDecimal <= 1
     ? { ...productRule, feeBands: productRule.feeBands.map((band) => ({ ...band, percentageRate: String(temporaryRateDecimal) })) }
-    : productRule, [productRule, temporaryRateDecimal]);
+    : productRule, [marketplace, productRule, temporaryRateDecimal]);
 
   const historyJson = useSyncExternalStore(subscribeToHistory, getHistorySnapshot, getHistoryServerSnapshot);
   const history = useMemo<SavedPricing[]>(() => {
