@@ -49,17 +49,42 @@ Deno.serve(async (req) => {
   const action = typeof body?.action === "string" ? body.action : "create";
   const userId = typeof body?.userId === "string" ? body.userId : "";
 
-  if (action === "update-role") {
+  if (action === "list") {
+    const { data, error } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+    if (error) return json({ error: "Não foi possível carregar os e-mails dos usuários" }, 500);
+    return json({ users: data.users.map((user) => ({ id: user.id, email: user.email ?? "" })) });
+  }
+
+  if (action === "update") {
     const role = body?.role;
-    if (!userId || !roles.includes(role)) return json({ error: "Usuário ou função inválida" }, 400);
-    const { data: target } = await admin.from("profiles").select("role").eq("id", userId).single();
-    if (target?.role === "admin" && role !== "admin") {
+    const displayName = typeof body?.displayName === "string" ? body.displayName.trim() : "";
+    const active = typeof body?.active === "boolean" ? body.active : null;
+    const password = typeof body?.password === "string" ? body.password : "";
+    if (!userId || !roles.includes(role) || displayName.length < 2 || active === null) return json({ error: "Revise os dados do usuário" }, 400);
+    if (password && password.length < 8) return json({ error: "A nova senha deve ter pelo menos 8 caracteres" }, 400);
+    const { data: target } = await admin.from("profiles").select("display_name,role,active").eq("id", userId).single();
+    if (!target) return json({ error: "Usuário não encontrado" }, 404);
+    if (target.role === "admin" && target.active && (role !== "admin" || !active)) {
       const { count } = await admin.from("profiles").select("id", { count: "exact", head: true }).eq("role", "admin").eq("active", true);
       if ((count ?? 0) <= 1) return json({ error: "Não é possível remover o último administrador" }, 400);
     }
-    const { error } = await admin.from("profiles").update({ role }).eq("id", userId);
-    if (error) return json({ error: "Não foi possível alterar a função" }, 400);
-    await admin.auth.admin.updateUserById(userId, { app_metadata: { role } });
+    const { error: profileError } = await admin.from("profiles").update({ display_name: displayName, role, active }).eq("id", userId);
+    if (profileError) return json({ error: "Não foi possível atualizar o perfil" }, 400);
+    const { data: authData, error: getUserError } = await admin.auth.admin.getUserById(userId);
+    const authUser = authData.user;
+    if (getUserError || !authUser) {
+      await admin.from("profiles").update(target).eq("id", userId);
+      return json({ error: "Usuário de autenticação não encontrado" }, 404);
+    }
+    const { error: authError } = await admin.auth.admin.updateUserById(userId, {
+      app_metadata: { ...authUser.app_metadata, role },
+      user_metadata: { ...authUser.user_metadata, display_name: displayName },
+      ...(password ? { password } : {}),
+    });
+    if (authError) {
+      await admin.from("profiles").update(target).eq("id", userId);
+      return json({ error: "Não foi possível atualizar os dados de acesso" }, 400);
+    }
     return json({ success: true });
   }
 

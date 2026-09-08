@@ -14,7 +14,11 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
   if (!userData.user) redirect("/login");
   const { data: profile } = await supabase.from("profiles").select("role,active").eq("id", userData.user.id).maybeSingle();
   if (!profile?.active || profile.role !== "admin") redirect("/");
-  const { data: users } = await supabase.from("profiles").select("id,display_name,role,active,created_at").order("created_at", { ascending: false });
+  const [{ data: users }, { data: authUsers }] = await Promise.all([
+    supabase.from("profiles").select("id,display_name,role,active,created_at").order("created_at", { ascending: false }),
+    supabase.functions.invoke("admin-users", { body: { action: "list" } }),
+  ]);
+  const emails = new Map(((authUsers as { users?: Array<{ id: string; email: string }> } | null)?.users ?? []).map((user) => [user.id, user.email]));
 
   return <>
     <PageHeader eyebrow="Administração" title="Usuários" description="Somente administradores podem cadastrar e gerenciar acessos." />
@@ -37,7 +41,7 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
         {(users ?? []).map((user) => <div className="table-row users-list" key={user.id}>
           <span><strong>{user.display_name ?? "Usuário"}</strong><small>{roleLabels[user.role as keyof typeof roleLabels] ?? user.role}</small></span>
           <span className={user.active ? "active-state" : "extinct-state"}>{user.active ? "Ativo" : "Inativo"}</span>
-          <span><UserManagementActions userId={user.id} userName={user.display_name ?? "Usuário"} role={user.role} isCurrentUser={user.id === userData.user.id} /></span>
+          <span><UserManagementActions userId={user.id} userName={user.display_name ?? "Usuário"} email={emails.get(user.id) ?? "E-mail indisponível"} role={user.role} active={user.active} isCurrentUser={user.id === userData.user.id} /></span>
         </div>)}
       </div>
     </section>

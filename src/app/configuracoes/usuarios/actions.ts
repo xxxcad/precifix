@@ -37,11 +37,29 @@ export async function createUser(formData: FormData) {
   done(result?.emailSent ? "Usuário criado e e-mail de boas-vindas enviado" : `Usuário criado. ${result?.emailWarning ?? "O e-mail não foi enviado"}.`);
 }
 
-export async function updateUserRole(formData: FormData) {
-  const parsed = z.object({ userId: z.uuid(), role: z.enum(["viewer", "analyst", "admin"]) }).safeParse(Object.fromEntries(formData));
-  if (!parsed.success) fail("Usuário ou função inválida");
-  await invoke({ action: "update-role", ...parsed.data });
-  done("Função do usuário atualizada");
+export async function updateUser(formData: FormData) {
+  const parsed = z.object({
+    userId: z.uuid(),
+    displayName: z.string().trim().min(2).max(100),
+    role: z.enum(["viewer", "analyst", "admin"]),
+    active: z.enum(["true", "false"]).transform((value) => value === "true"),
+    password: z.string().max(72).optional(),
+    passwordConfirmation: z.string().max(72).optional(),
+  }).superRefine((value, context) => {
+    if (value.password && value.password.length < 8) context.addIssue({ code: "custom", path: ["password"], message: "A nova senha deve ter pelo menos 8 caracteres" });
+    if (value.password !== value.passwordConfirmation) context.addIssue({ code: "custom", path: ["passwordConfirmation"], message: "As senhas não conferem" });
+  }).safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return fail(parsed.error.issues[0]?.message ?? "Revise os dados do usuário");
+  const user = parsed.data;
+  await invoke({
+    action: "update",
+    userId: user.userId,
+    displayName: user.displayName,
+    role: user.role,
+    active: user.active,
+    password: user.password || undefined,
+  });
+  done("Dados do usuário atualizados");
 }
 
 export async function sendPasswordRecovery(formData: FormData) {
