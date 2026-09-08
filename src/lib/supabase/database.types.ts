@@ -719,6 +719,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      profile_display_names: { Args: { target_ids: string[] }; Returns: { id: string; display_name: string | null }[] }
       publish_amazon_shipping_rule: { Args: { payload: Json; reason: string }; Returns: string }
       publish_ml_shipping_rule: { Args: { payload: Json; reason: string }; Returns: string }
     }

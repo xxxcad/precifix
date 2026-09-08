@@ -269,7 +269,7 @@ export async function loadNewProductHistory({ query = "", page = 1, pageSize = 2
   };
 }
 
-export interface RepricingItem { id: string; productId: string; createdAt: string; sku: string; productName: string; supplierName: string; cost: string; marketplace: string; reason: string; sourceType: string; status: string }
+export interface RepricingItem { id: string; productId: string; createdAt: string; resolvedAt: string | null; resolvedByName: string | null; sku: string; productName: string; supplierName: string; cost: string; marketplace: string; reason: string; sourceType: string; status: string }
 export async function loadRepricingQueue(): Promise<RepricingItem[]> {
   const supabase = await createClient();
   if (!supabase) return [];
@@ -279,11 +279,14 @@ export async function loadRepricingQueue(): Promise<RepricingItem[]> {
     supabase.from("suppliers").select("id,name"),
   ]);
   if (queue.error) return [];
+  const resolverIds = Array.from(new Set((queue.data ?? []).map((item) => item.resolved_by).filter((id): id is string => Boolean(id))));
+  const { data: resolverRows } = resolverIds.length ? await supabase.rpc("profile_display_names", { target_ids: resolverIds }) : { data: [] };
+  const resolvers = new Map((resolverRows ?? []).map((item) => [item.id, item.display_name ?? "Usuário"]));
   const products = new Map((productsResult.data ?? []).map((row) => [row.id, row]));
   const marketplaces = new Map((marketplacesResult.data ?? []).map((row) => [row.id, row.name]));
   const suppliers = new Map((suppliersResult.data ?? []).map((row) => [row.id, row.name]));
   return (queue.data ?? []).map((row) => ({
-    id: row.id, productId: row.product_id, createdAt: row.created_at, sku: products.get(row.product_id)?.sku ?? "—",
+    id: row.id, productId: row.product_id, createdAt: row.created_at, resolvedAt: row.resolved_at, resolvedByName: row.resolved_by ? resolvers.get(row.resolved_by) ?? "Usuário não identificado" : null, sku: products.get(row.product_id)?.sku ?? "—",
     productName: products.get(row.product_id)?.name ?? "Produto removido", supplierName: suppliers.get(products.get(row.product_id)?.supplier_id ?? "") ?? "—", cost: value(products.get(row.product_id)?.cost),
     marketplace: row.marketplace_id ? marketplaces.get(row.marketplace_id) ?? "Todos" : "Todos",
     reason: row.reason, sourceType: row.source_type, status: row.status,
