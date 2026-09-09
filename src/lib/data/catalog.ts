@@ -2,6 +2,8 @@ import type { DemoProduct } from "@/data/demo-data";
 import { redirect } from "next/navigation";
 import type { FiscalRuleKey, ListingType, MarginClassificationRule, MarketplaceKey, MarketplaceRuleSnapshot, MarketplaceShippingRule } from "@/domain/pricing/types";
 import type { MarketplaceRuleMap } from "@/domain/pricing/marketplace-rules";
+import { repricingTypeLabel, type RepricingTypeLabel } from "@/domain/repricing";
+export type { RepricingTypeLabel } from "@/domain/repricing";
 import type { Json } from "@/lib/supabase/database.types";
 import { createClient } from "@/lib/supabase/server";
 
@@ -15,7 +17,7 @@ type ProductRow = {
 };
 type ConfigRow = { product_id: string; marketplace_id: string; listing_type: string; current_sale_price: number | null; commission_rate_override: number | null; freight_cost: number | null };
 
-const value = (input: number | null | undefined, fallback = 0) => String(input ?? fallback);
+const value = (input: unknown, fallback = 0) => String(typeof input === "number" || typeof input === "string" ? input : fallback);
 const marketplaceDefaults: Record<MarketplaceKey, string> = { MERCADO_LIVRE: "0.115", SHOPEE: "0.14", AMAZON: "0.12" };
 
 export async function loadMarginClassifications(): Promise<MarginClassificationRule[]> {
@@ -188,88 +190,77 @@ export async function loadProductCostHistory(productId: string): Promise<CostHis
 
 export interface HistoryPageResult<T> { items: T[]; page: number; pageSize: number; total: number }
 export interface PricingHistoryItem { id: string; createdAt: string; sku: string; productName: string; marketplace: string; listingType: string; salePrice: string; shippingCost: string; marginValue: string; marginPercent: string }
-export interface CostChangeHistoryItem { id: string; changedAt: string; sku: string; productName: string; oldCost: string; newCost: string; changedBy: string }
+export interface CostChangeHistoryItem { id: string; changedAt: string; sku: string; productName: string; oldCost: string; newCost: string; costDifference: string; differencePercent: string | null; changedBy: string }
 export interface NewProductHistoryItem { id: string; createdAt: string; sku: string; productName: string; supplierName: string; active: boolean }
-type HistoryOptions = { query?: string; page?: number; pageSize?: number };
+export type SortDirection = "asc" | "desc";
+type HistoryOptions = { query?: string; page?: number; pageSize?: number; sort?: string; direction?: SortDirection };
 
-async function matchingHistoryProducts(query: string) {
-  const supabase = await createClient();
-  if (!supabase) return { supabase: null, products: [] as { id: string; sku: string; name: string }[] };
-  const { data } = await supabase.from("products").select("id,sku,name").order("sku");
-  const normalized = query.trim().toLocaleLowerCase("pt-BR");
-  const products = normalized ? (data ?? []).filter((item) => `${item.sku} ${item.name}`.toLocaleLowerCase("pt-BR").includes(normalized)) : data ?? [];
-  return { supabase, products };
-}
+type RpcHistoryPayload = { total?: number; items?: Array<Record<string, unknown>> };
+const rpcPayload = (data: Json | null): RpcHistoryPayload => data && typeof data === "object" && !Array.isArray(data) ? data as unknown as RpcHistoryPayload : {};
+const pageResult = <T>(payload: RpcHistoryPayload, page: number, pageSize: number, items: T[]): HistoryPageResult<T> => ({ items, page, pageSize, total: Number(payload.total ?? 0) });
 
-export async function loadPricingHistory({ query = "", page = 1, pageSize = 20 }: HistoryOptions = {}): Promise<HistoryPageResult<PricingHistoryItem>> {
+export async function loadPricingHistory({ query = "", page = 1, pageSize = 20, sort = "date", direction = "desc" }: HistoryOptions = {}): Promise<HistoryPageResult<PricingHistoryItem>> {
   const safePage = Math.max(1, Math.trunc(page));
-  const safePageSize = Math.min(100, Math.max(1, Math.trunc(pageSize)));
-  const { supabase, products: matchingProducts } = await matchingHistoryProducts(query);
-  if (!supabase || !matchingProducts.length) return { items: [], page: safePage, pageSize: safePageSize, total: 0 };
-  const from = (safePage - 1) * safePageSize;
-  const [history, productsResult, marketplacesResult] = await Promise.all([
-    supabase.from("pricing_calculations").select("id,created_at,product_id,marketplace_id,listing_type,sale_price,shipping_cost,results,rule_snapshot", { count: "exact" }).in("product_id", matchingProducts.map((item) => item.id)).order("created_at", { ascending: false }).range(from, from + safePageSize - 1),
-    Promise.resolve({ data: matchingProducts }), supabase.from("marketplaces").select("id,name"),
-  ]);
-  if (history.error) return { items: [], page: safePage, pageSize: safePageSize, total: 0 };
-  const products = new Map((productsResult.data ?? []).map((row) => [row.id, row]));
-  const marketplaces = new Map((marketplacesResult.data ?? []).map((row) => [row.id, row.name]));
-  const object = (input: Json | undefined): { [key: string]: Json | undefined } => input && typeof input === "object" && !Array.isArray(input) ? input : {};
-  const text = (input: Json | undefined) => typeof input === "number" || typeof input === "string" ? String(input) : "0";
-  const items = (history.data ?? []).map((row) => {
-    const snapshot = object(row.rule_snapshot);
-    const selectedRegion = snapshot.selectedRegion === "SUL_SUDESTE" || snapshot.selectedRegion === "NORTE_NORDESTE" ? snapshot.selectedRegion : "SP";
-    const regionalResult = object(object(row.results)[selectedRegion]);
-    return {
-      id: row.id, createdAt: row.created_at, sku: products.get(row.product_id)?.sku ?? "—",
-      productName: products.get(row.product_id)?.name ?? "Produto removido", marketplace: marketplaces.get(row.marketplace_id) ?? "—",
-      listingType: row.listing_type, salePrice: value(row.sale_price), shippingCost: value(row.shipping_cost),
-      marginValue: text(regionalResult.contributionMarginValue), marginPercent: text(regionalResult.contributionMarginPercent),
-    };
-  });
-  return { items, page: safePage, pageSize: safePageSize, total: history.count ?? 0 };
-}
-
-export async function loadCostChangeHistory({ query = "", page = 1, pageSize = 20 }: HistoryOptions = {}): Promise<HistoryPageResult<CostChangeHistoryItem>> {
-  const safePage = Math.max(1, Math.trunc(page));
-  const safePageSize = Math.min(100, Math.max(1, Math.trunc(pageSize)));
-  const { supabase, products } = await matchingHistoryProducts(query);
-  if (!supabase || !products.length) return { items: [], page: safePage, pageSize: safePageSize, total: 0 };
-  const from = (safePage - 1) * safePageSize;
-  const [history, profilesResult] = await Promise.all([
-    supabase.from("product_cost_history").select("id,product_id,old_cost,new_cost,changed_by,changed_at", { count: "exact" }).in("product_id", products.map((item) => item.id)).order("changed_at", { ascending: false }).range(from, from + safePageSize - 1),
-    supabase.from("profiles").select("id,display_name"),
-  ]);
-  if (history.error) return { items: [], page: safePage, pageSize: safePageSize, total: 0 };
-  const productMap = new Map(products.map((item) => [item.id, item]));
-  const profileMap = new Map((profilesResult.data ?? []).map((item) => [item.id, item.display_name ?? "Usuário"]));
-  return {
-    items: (history.data ?? []).map((item) => ({ id: item.id, changedAt: item.changed_at, sku: productMap.get(item.product_id)?.sku ?? "—", productName: productMap.get(item.product_id)?.name ?? "Produto removido", oldCost: value(item.old_cost), newCost: value(item.new_cost), changedBy: item.changed_by ? profileMap.get(item.changed_by) ?? "Usuário" : "Sistema" })),
-    page: safePage, pageSize: safePageSize, total: history.count ?? 0,
-  };
-}
-
-export async function loadNewProductHistory({ query = "", page = 1, pageSize = 20 }: HistoryOptions = {}): Promise<HistoryPageResult<NewProductHistoryItem>> {
-  const safePage = Math.max(1, Math.trunc(page));
-  const safePageSize = Math.min(100, Math.max(1, Math.trunc(pageSize)));
+  const safePageSize = Math.min(20, Math.max(1, Math.trunc(pageSize)));
   const supabase = await createClient();
   if (!supabase) return { items: [], page: safePage, pageSize: safePageSize, total: 0 };
-  const [productsResult, suppliersResult] = await Promise.all([
-    supabase.from("products").select("id,sku,name,supplier_id,active,created_at").order("created_at", { ascending: false }),
-    supabase.from("suppliers").select("id,name"),
-  ]);
-  if (productsResult.error) return { items: [], page: safePage, pageSize: safePageSize, total: 0 };
-  const normalized = query.trim().toLocaleLowerCase("pt-BR");
-  const filtered = normalized ? (productsResult.data ?? []).filter((item) => `${item.sku} ${item.name}`.toLocaleLowerCase("pt-BR").includes(normalized)) : productsResult.data ?? [];
-  const from = (safePage - 1) * safePageSize;
-  const suppliers = new Map((suppliersResult.data ?? []).map((item) => [item.id, item.name]));
-  return {
-    items: filtered.slice(from, from + safePageSize).map((item) => ({ id: item.id, createdAt: item.created_at, sku: item.sku, productName: item.name, supplierName: suppliers.get(item.supplier_id) ?? "—", active: item.active })),
-    page: safePage, pageSize: safePageSize, total: filtered.length,
-  };
+  const { data, error } = await supabase.rpc("list_operational_history", { p_kind: "pricing", p_query: query, p_page: safePage, p_page_size: safePageSize, p_sort: sort, p_direction: direction });
+  if (error) return { items: [], page: safePage, pageSize: safePageSize, total: 0 };
+  const payload = rpcPayload(data);
+  const items = (payload.items ?? []).map((row) => ({ id: String(row.id), createdAt: String(row.created_at), sku: String(row.sku), productName: String(row.product_name), marketplace: String(row.marketplace_name), listingType: String(row.listing_type), salePrice: value(row.sale_price), shippingCost: value(row.shipping_cost), marginValue: value(row.margin_value), marginPercent: value(row.margin_percent) }));
+  return pageResult(payload, safePage, safePageSize, items);
 }
 
-export interface RepricingItem { id: string; productId: string; createdAt: string; resolvedAt: string | null; resolvedByName: string | null; sku: string; productName: string; supplierName: string; cost: string; marketplace: string; reason: string; sourceType: string; status: string }
+export async function loadCostChangeHistory({ query = "", page = 1, pageSize = 20, sort = "date", direction = "desc" }: HistoryOptions = {}): Promise<HistoryPageResult<CostChangeHistoryItem>> {
+  const safePage = Math.max(1, Math.trunc(page));
+  const safePageSize = Math.min(20, Math.max(1, Math.trunc(pageSize)));
+  const supabase = await createClient();
+  if (!supabase) return { items: [], page: safePage, pageSize: safePageSize, total: 0 };
+  const { data, error } = await supabase.rpc("list_operational_history", { p_kind: "cost", p_query: query, p_page: safePage, p_page_size: safePageSize, p_sort: sort, p_direction: direction });
+  if (error) return { items: [], page: safePage, pageSize: safePageSize, total: 0 };
+  const payload = rpcPayload(data);
+  const items = (payload.items ?? []).map((row) => ({ id: String(row.id), changedAt: String(row.changed_at), sku: String(row.sku), productName: String(row.product_name), oldCost: value(row.old_cost), newCost: value(row.new_cost), costDifference: value(row.cost_difference), differencePercent: row.difference_percent == null ? null : value(row.difference_percent), changedBy: String(row.changed_by_name) }));
+  return pageResult(payload, safePage, safePageSize, items);
+}
+
+export async function loadNewProductHistory({ query = "", page = 1, pageSize = 20, sort = "date", direction = "desc" }: HistoryOptions = {}): Promise<HistoryPageResult<NewProductHistoryItem>> {
+  const safePage = Math.max(1, Math.trunc(page));
+  const safePageSize = Math.min(20, Math.max(1, Math.trunc(pageSize)));
+  const supabase = await createClient();
+  if (!supabase) return { items: [], page: safePage, pageSize: safePageSize, total: 0 };
+  const { data, error } = await supabase.rpc("list_operational_history", { p_kind: "products", p_query: query, p_page: safePage, p_page_size: safePageSize, p_sort: sort, p_direction: direction });
+  if (error) return { items: [], page: safePage, pageSize: safePageSize, total: 0 };
+  const payload = rpcPayload(data);
+  const items = (payload.items ?? []).map((row) => ({ id: String(row.id), createdAt: String(row.created_at), sku: String(row.sku), productName: String(row.product_name), supplierName: String(row.supplier_name), active: Boolean(row.active) }));
+  return pageResult(payload, safePage, safePageSize, items);
+}
+
+export interface RepricingItem { id: string; productId: string; createdAt: string; resolvedAt: string | null; resolvedByName: string | null; sku: string; productName: string; supplierName: string; cost: string; marketplace: string; reason: string; sourceType: string; typeLabel: RepricingTypeLabel; status: string }
+export type RepricingPageOptions = { scope: "pending" | "completed"; channel?: string; page?: number; pageSize?: number; sort?: string; direction?: SortDirection };
+
+export async function loadActiveMarketplaceNames(): Promise<string[]> {
+  const supabase = await createClient();
+  if (!supabase) return [];
+  const { data } = await supabase.from("marketplaces").select("name").eq("active", true).order("name");
+  return (data ?? []).map((item) => item.name);
+}
+
+export async function loadRepricingPage({ scope, channel = "", page = 1, pageSize = 20, sort = "date", direction = "desc" }: RepricingPageOptions): Promise<HistoryPageResult<RepricingItem>> {
+  const safePage = Math.max(1, Math.trunc(page));
+  const safePageSize = Math.min(20, Math.max(1, Math.trunc(pageSize)));
+  const supabase = await createClient();
+  if (!supabase) return { items: [], page: safePage, pageSize: safePageSize, total: 0 };
+  const { data, error } = await supabase.rpc("list_operational_history", { p_kind: scope === "pending" ? "repricing_pending" : "repricing_completed", p_channel: channel, p_page: safePage, p_page_size: safePageSize, p_sort: sort, p_direction: direction });
+  if (error) return { items: [], page: safePage, pageSize: safePageSize, total: 0 };
+  const payload = rpcPayload(data);
+  const items = (payload.items ?? []).map((row) => ({
+    id: String(row.id), productId: String(row.product_id), createdAt: String(row.created_at), resolvedAt: row.resolved_at == null ? null : String(row.resolved_at),
+    resolvedByName: row.resolved_by_name == null ? null : String(row.resolved_by_name), sku: String(row.sku), productName: String(row.product_name), supplierName: String(row.supplier_name),
+    cost: value(row.cost), marketplace: String(row.marketplace_name), reason: String(row.reason), sourceType: String(row.source_type), typeLabel: String(row.type_label) as RepricingTypeLabel, status: String(row.status),
+  }));
+  return pageResult(payload, safePage, safePageSize, items);
+}
+
 export async function loadRepricingQueue(): Promise<RepricingItem[]> {
   const supabase = await createClient();
   if (!supabase) return [];
@@ -289,6 +280,6 @@ export async function loadRepricingQueue(): Promise<RepricingItem[]> {
     id: row.id, productId: row.product_id, createdAt: row.created_at, resolvedAt: row.resolved_at, resolvedByName: row.resolved_by ? resolvers.get(row.resolved_by) ?? "Usuário não identificado" : null, sku: products.get(row.product_id)?.sku ?? "—",
     productName: products.get(row.product_id)?.name ?? "Produto removido", supplierName: suppliers.get(products.get(row.product_id)?.supplier_id ?? "") ?? "—", cost: value(products.get(row.product_id)?.cost),
     marketplace: row.marketplace_id ? marketplaces.get(row.marketplace_id) ?? "Todos" : "Todos",
-    reason: row.reason, sourceType: row.source_type, status: row.status,
+    reason: row.reason, sourceType: row.source_type, typeLabel: repricingTypeLabel(row.source_type), status: row.status,
   }));
 }

@@ -12,10 +12,12 @@ import type {
   MarketplaceRuleCard,
   NewProductHistoryItem,
   PricingHistoryItem,
+  SortDirection,
   SupplierItem,
 } from "@/lib/data/catalog";
 import { formatMoney, formatPercent } from "@/lib/format";
 import { PricingHistoryList } from "./pricing-history-list";
+import { SortableColumn } from "./sortable-column";
 import { ProductsTable } from "./products-table";
 import { updateMarginClassifications } from "@/app/configuracoes/actions";
 import type { MarginClassificationRule } from "@/domain/pricing/types";
@@ -204,6 +206,12 @@ type HistorySearch = {
   costPage: number;
   productPage: number;
   pricingPage: number;
+  costSort: string;
+  costDirection: SortDirection;
+  productSort: string;
+  productDirection: SortDirection;
+  pricingSort: string;
+  pricingDirection: SortDirection;
 };
 
 function historyUrl(search: HistorySearch, changes: Partial<HistorySearch>) {
@@ -215,8 +223,22 @@ function historyUrl(search: HistorySearch, changes: Partial<HistorySearch>) {
   if (next.costPage > 1) params.set("costPage", String(next.costPage));
   if (next.productPage > 1) params.set("productPage", String(next.productPage));
   if (next.pricingPage > 1) params.set("pricingPage", String(next.pricingPage));
+  if (next.costSort !== "date") params.set("costSort", next.costSort);
+  if (next.costDirection !== "desc") params.set("costDirection", next.costDirection);
+  if (next.productSort !== "date") params.set("productSort", next.productSort);
+  if (next.productDirection !== "desc") params.set("productDirection", next.productDirection);
+  if (next.pricingSort !== "date") params.set("pricingSort", next.pricingSort);
+  if (next.pricingDirection !== "desc") params.set("pricingDirection", next.pricingDirection);
   const suffix = params.toString();
   return (suffix ? `/historico?${suffix}` : "/historico") as Route;
+}
+
+function historySortHref(search: HistorySearch, list: "cost" | "product" | "pricing", column: string, defaultDirection: SortDirection) {
+  const sortKey = `${list}Sort` as "costSort" | "productSort" | "pricingSort";
+  const directionKey = `${list}Direction` as "costDirection" | "productDirection" | "pricingDirection";
+  const pageKey = `${list}Page` as "costPage" | "productPage" | "pricingPage";
+  const direction = search[sortKey] === column ? (search[directionKey] === "asc" ? "desc" : "asc") : defaultDirection;
+  return historyUrl(search, { [sortKey]: column, [directionKey]: direction, [pageKey]: 1 });
 }
 
 function HistoryPagination<T>({
@@ -255,6 +277,27 @@ function HistoryPagination<T>({
   );
 }
 
+function CostDifference({ item }: { item: CostChangeHistoryItem }) {
+  const difference = Number(item.costDifference);
+  const tone = difference > 0 ? "increase" : difference < 0 ? "decrease" : "neutral";
+  const sign = difference > 0 ? "+" : "";
+  return <span className={`cost-difference ${tone}`}>
+    <strong>{sign}{formatMoney(item.costDifference)}</strong>
+    <small>{item.differencePercent == null ? "Percentual não aplicável" : `${sign}${formatPercent(item.differencePercent)}`}</small>
+  </span>;
+}
+
+function HistorySortFields({ search }: { search: HistorySearch }) {
+  return <>
+    <input type="hidden" name="costSort" value={search.costSort} />
+    <input type="hidden" name="costDirection" value={search.costDirection} />
+    <input type="hidden" name="productSort" value={search.productSort} />
+    <input type="hidden" name="productDirection" value={search.productDirection} />
+    <input type="hidden" name="pricingSort" value={search.pricingSort} />
+    <input type="hidden" name="pricingDirection" value={search.pricingDirection} />
+  </>;
+}
+
 export function HistoryPage({
   costHistory,
   productHistory,
@@ -280,6 +323,7 @@ export function HistoryPage({
           </div>
         </div>
         <form className="history-filter" method="get">
+          <HistorySortFields search={search} />
           <input
             type="hidden"
             name="productQuery"
@@ -313,11 +357,12 @@ export function HistoryPage({
         {costHistory.items.length ? (
           <div className="data-table">
             <div className="table-row cost-history-list table-head">
-              <span>Produto</span>
-              <span>Custo anterior</span>
-              <span>Novo custo</span>
-              <span>Alterado por</span>
-              <span>Data</span>
+              <SortableColumn label="Produto" active={search.costSort === "product"} direction={search.costDirection} href={historySortHref(search, "cost", "product", "asc")} />
+              <SortableColumn label="Custo anterior" active={search.costSort === "oldCost"} direction={search.costDirection} href={historySortHref(search, "cost", "oldCost", "desc")} />
+              <SortableColumn label="Novo custo" active={search.costSort === "newCost"} direction={search.costDirection} href={historySortHref(search, "cost", "newCost", "desc")} />
+              <SortableColumn label="Diferença" active={search.costSort === "difference"} direction={search.costDirection} href={historySortHref(search, "cost", "difference", "desc")} />
+              <SortableColumn label="Alterado por" active={search.costSort === "changedBy"} direction={search.costDirection} href={historySortHref(search, "cost", "changedBy", "asc")} />
+              <SortableColumn label="Data" active={search.costSort === "date"} direction={search.costDirection} href={historySortHref(search, "cost", "date", "desc")} />
             </div>
             {costHistory.items.map((item) => (
               <div className="table-row cost-history-list" key={item.id}>
@@ -327,6 +372,7 @@ export function HistoryPage({
                 </span>
                 <span>{formatMoney(item.oldCost)}</span>
                 <span>{formatMoney(item.newCost)}</span>
+                <CostDifference item={item} />
                 <span>{item.changedBy}</span>
                 <span>
                   {new Date(item.changedAt).toLocaleString("pt-BR", {
@@ -359,6 +405,7 @@ export function HistoryPage({
           </div>
         </div>
         <form className="history-filter" method="get">
+          <HistorySortFields search={search} />
           <input type="hidden" name="costQuery" value={search.costQuery} />
           <input type="hidden" name="costPage" value={search.costPage} />
           <input
@@ -388,10 +435,10 @@ export function HistoryPage({
         {productHistory.items.length ? (
           <div className="data-table">
             <div className="table-row new-product-history-list table-head">
-              <span>Produto</span>
-              <span>Fornecedor</span>
-              <span>Status</span>
-              <span>Adicionado em</span>
+              <SortableColumn label="Produto" active={search.productSort === "product"} direction={search.productDirection} href={historySortHref(search, "product", "product", "asc")} />
+              <SortableColumn label="Fornecedor" active={search.productSort === "supplier"} direction={search.productDirection} href={historySortHref(search, "product", "supplier", "asc")} />
+              <SortableColumn label="Status" active={search.productSort === "status"} direction={search.productDirection} href={historySortHref(search, "product", "status", "asc")} />
+              <SortableColumn label="Adicionado em" active={search.productSort === "date"} direction={search.productDirection} href={historySortHref(search, "product", "date", "desc")} />
             </div>
             {productHistory.items.map((item) => (
               <div className="table-row new-product-history-list" key={item.id}>
@@ -435,6 +482,7 @@ export function HistoryPage({
           </div>
         </div>
         <form className="history-filter" method="get">
+          <HistorySortFields search={search} />
           <input type="hidden" name="costQuery" value={search.costQuery} />
           <input type="hidden" name="costPage" value={search.costPage} />
           <input
@@ -461,7 +509,19 @@ export function HistoryPage({
             </Link>
           )}
         </form>
-        <PricingHistoryList databaseItems={pricingHistory.items} />
+        <PricingHistoryList
+          databaseItems={pricingHistory.items}
+          sort={search.pricingSort}
+          direction={search.pricingDirection}
+          links={{
+            product: historySortHref(search, "pricing", "product", "asc"),
+            marketplace: historySortHref(search, "pricing", "marketplace", "asc"),
+            price: historySortHref(search, "pricing", "price", "desc"),
+            shipping: historySortHref(search, "pricing", "shipping", "desc"),
+            margin: historySortHref(search, "pricing", "margin", "desc"),
+            date: historySortHref(search, "pricing", "date", "desc"),
+          }}
+        />
         <HistoryPagination
           result={pricingHistory}
           pageKey="pricingPage"

@@ -722,6 +722,18 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      list_operational_history: {
+        Args: {
+          p_channel?: string
+          p_direction?: string
+          p_kind: string
+          p_page?: number
+          p_page_size?: number
+          p_query?: string
+          p_sort?: string
+        }
+        Returns: Json
+      }
       profile_display_names: { Args: { target_ids: string[] }; Returns: { id: string; display_name: string | null }[] }
       publish_amazon_shipping_rule: { Args: { payload: Json; reason: string }; Returns: string }
       publish_ml_shipping_rule: { Args: { payload: Json; reason: string }; Returns: string }

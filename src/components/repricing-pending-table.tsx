@@ -1,9 +1,11 @@
 "use client";
 import { useState } from "react";
-import type { RepricingItem } from "@/lib/data/catalog";
+import type { Route } from "next";
+import type { RepricingItem, SortDirection } from "@/lib/data/catalog";
 import { updateQueueItems } from "@/app/reprecificacao/actions";
+import { SortableColumn } from "./sortable-column";
 
-export function RepricingPendingTable({ items }: { items: RepricingItem[] }) {
+export function RepricingPendingTable({ items, sort, direction, links }: { items: RepricingItem[]; sort: string; direction: SortDirection; links: Record<string, Route> }) {
   const [selected, setSelected] = useState<string[]>([]);
   const allSelected = items.length > 0 && selected.length === items.length;
   return (
@@ -32,10 +34,11 @@ export function RepricingPendingTable({ items }: { items: RepricingItem[] }) {
       <div className="data-table repricing-table">
         <div className="table-row queue-list queue-select table-head">
           <span />
-          <span>Produto</span>
-          <span>Canal</span>
-          <span>Motivo</span>
-          <span>Alterado</span>
+          <SortableColumn label="Produto" active={sort === "product"} direction={direction} href={links.product} />
+          <SortableColumn label="Canal" active={sort === "channel"} direction={direction} href={links.channel} />
+          <SortableColumn label="Tipo" active={sort === "type"} direction={direction} href={links.type} />
+          <SortableColumn label="Motivo" active={sort === "reason"} direction={direction} href={links.reason} />
+          <SortableColumn label="Alterado" active={sort === "date"} direction={direction} href={links.date} />
           <span>Ação</span>
         </div>
         {items.map((item) => (
@@ -60,6 +63,7 @@ export function RepricingPendingTable({ items }: { items: RepricingItem[] }) {
               <small>{item.productName}</small>
             </span>
             <span className="queue-channel">{item.marketplace}</span>
+            <span><em className="repricing-type">{item.typeLabel}</em></span>
             <span className="queue-reason">{item.reason}</span>
             <span>{new Date(item.createdAt).toLocaleDateString("pt-BR")}</span>
             <span>
