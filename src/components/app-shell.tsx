@@ -11,14 +11,12 @@ import {
   Clock3,
   Gauge,
   Landmark,
-  LogOut,
-  PanelLeftClose,
   RefreshCcw,
   ReceiptText,
   Settings2,
 } from "lucide-react";
 import type { ReactNode } from "react";
-import { logout } from "@/app/auth/actions";
+import { ProfileMenu, type ShellProfile } from "@/components/profile-menu";
 
 const navigation = [
   { href: "/", label: "Início", icon: Gauge },
@@ -32,7 +30,7 @@ const navigation = [
   { href: "/configuracoes", label: "Configurações", icon: Settings2 },
 ] as const;
 
-export function AppShell({ children }: { children: ReactNode }) {
+export function AppShell({ children, profile }: { children: ReactNode; profile: ShellProfile | null }) {
   const pathname = usePathname();
   if (pathname.startsWith("/login")) return children;
 
@@ -56,9 +54,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           })}
         </nav>
         <div className="sidebar-foot">
-          <PanelLeftClose size={16} />
-          <span>Ambiente interno</span>
-          <form action={logout}><button aria-label="Sair" title="Sair" type="submit"><LogOut size={15} /></button></form>
+          <ProfileMenu profile={profile} />
         </div>
       </aside>
       <main className="main-content">{children}</main>

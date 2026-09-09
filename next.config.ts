@@ -3,6 +3,9 @@ import { PHASE_PRODUCTION_BUILD } from "next/constants";
 
 const nextConfig: NextConfig = {
   typedRoutes: true,
+  experimental: {
+    serverActions: { bodySizeLimit: "3mb" },
+  },
 };
 
 export default function config(phase: string): NextConfig {
