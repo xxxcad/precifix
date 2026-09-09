@@ -6,7 +6,7 @@ import type { Route } from "next";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 
-const basePath = "/configuracoes/usuarios";
+const basePath = "/admin/usuarios";
 const fail = (message: string): never => redirect(`${basePath}?error=${encodeURIComponent(message)}` as Route);
 const done = (message: string): never => { revalidatePath(basePath); redirect(`${basePath}?message=${encodeURIComponent(message)}` as Route); };
 

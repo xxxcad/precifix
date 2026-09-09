@@ -489,23 +489,11 @@ export function SettingsPage({
   return (
     <>
       <PageHeader
-        eyebrow="Administração"
+        eyebrow="Precificação"
         title="Configurações"
-        description="Parâmetros operacionais e controle de acesso."
+        description="Parâmetros gerais usados nos cálculos e análises de margem."
       />
       <section className="settings-list">
-        {isAdmin && <article className="wide-card">
-          <h2>Usuários e permissões</h2>
-          <p>
-            Cadastre usuários com acesso de consulta, análise ou administração.
-          </p>
-          <Link
-            className="secondary-button"
-            href={"/configuracoes/usuarios" as Route}
-          >
-            Gerenciar usuários
-          </Link>
-        </article>}
         <article className="wide-card">
           <h2>Classificação de margem</h2>
           <p>
