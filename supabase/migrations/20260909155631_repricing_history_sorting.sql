@@ -147,9 +147,12 @@ begin
             when q.source_type in ('PRODUCT_COST_CHANGE') then 'Custo'
             when q.source_type = 'PRODUCT_FIXED_PRICE_CHANGE' then 'Preço tabelado'
             when q.source_type in ('PRODUCT_FISCAL_RULE_CHANGE','PRODUCT_TAX_CHANGE','FISCAL_RULE_CHANGE') then 'Fiscal'
-            when q.source_type in ('PRODUCT_MARKETPLACE_COMMISSION_CHANGE','PRODUCT_MARKETPLACE_FIXED_FEE_CHANGE','PRODUCT_MARKETPLACE_LISTING_CHANGE','MARKETPLACE_CHANGE','MARKETPLACE_FEE_BAND_CHANGE','MARKETPLACE_FEE_RULE_CHANGE') then 'Comissão/Tarifa'
+            when q.source_type in ('PRODUCT_MARKETPLACE_COMMISSION_CHANGE','PRODUCT_MARKETPLACE_FIXED_FEE_CHANGE','PRODUCT_MARKETPLACE_LISTING_CHANGE','PRODUCT_MARKETPLACE_CHANGE','MARKETPLACE_CHANGE','MARKETPLACE_FEE_BAND_CHANGE','MARKETPLACE_FEE_RULE_CHANGE') then 'Comissão/Tarifa'
             when q.source_type in ('PRODUCT_MARKETPLACE_FREIGHT_CHANGE','PRODUCT_PACKAGING_CHANGE','MARKETPLACE_SHIPPING_RULE') then 'Frete/Embalagem'
-            when q.source_type in ('PRODUCT_CHANGE','PRODUCT_MARKETPLACE_CHANGE') then 'Cadastro/Status'
+            when q.source_type = 'PRODUCT_CHANGE' and lower(q.reason) similar to '%(frete|peso|altura|largura|comprimento|dimens|embalagem|cubagem)%' then 'Frete/Embalagem'
+            when q.source_type = 'PRODUCT_CHANGE' and lower(q.reason) similar to '%(custo)%' then 'Custo'
+            when q.source_type = 'PRODUCT_CHANGE' and lower(q.reason) similar to '%(fiscal|icms|pis|cofins|ipi|st )%' then 'Fiscal'
+            when q.source_type = 'PRODUCT_CHANGE' then 'Cadastro/Status'
             else 'Outros'
           end as type_label
         from public.repricing_queue q

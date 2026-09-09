@@ -7,6 +7,7 @@ describe("repricingTypeLabel", () => {
     ["PRODUCT_FIXED_PRICE_CHANGE", "Preço tabelado"],
     ["PRODUCT_TAX_CHANGE", "Fiscal"],
     ["PRODUCT_MARKETPLACE_COMMISSION_CHANGE", "Comissão/Tarifa"],
+    ["PRODUCT_MARKETPLACE_CHANGE", "Comissão/Tarifa"],
     ["PRODUCT_PACKAGING_CHANGE", "Frete/Embalagem"],
     ["PRODUCT_CHANGE", "Cadastro/Status"],
     ["UNRECOGNIZED_SOURCE", "Outros"],
