@@ -72,11 +72,18 @@ export async function deleteSupplier(formData: FormData) {
 
 const productPercent = z.coerce.number().min(0).max(100).transform((value) => value / 100);
 const optionalPositive = z.preprocess((value) => value == null || value === "" ? null : value, z.union([z.coerce.number().positive(), z.null()]));
-const productFields = { sku: z.string().trim().min(1).max(80), name: z.string().trim().min(2).max(240), manufacturerCode: z.string().trim().max(120).optional(), supplierId: z.uuid(), fiscalRuleId: z.uuid(), cost: z.coerce.number().min(0), stAmount: z.coerce.number().min(0).default(0), inputIcmsRate: productPercent, inputPisRate: productPercent, inputCofinsRate: productPercent, inputIpiRate: productPercent, mlClassicRate: productPercent, mlPremiumRate: productPercent, amazonRate: productPercent, hasFixedPrice: z.enum(["true", "false"]).transform((value) => value === "true"), fixedPrice: z.preprocess((value) => value == null || value === "" ? undefined : value, z.coerce.number().positive().optional()), packageWeightKg: optionalPositive, packageHeightCm: optionalPositive, packageWidthCm: optionalPositive, packageLengthCm: optionalPositive };
-const validateProduct = (data: { hasFixedPrice: boolean; fixedPrice?: number; packageWeightKg: number | null; packageHeightCm: number | null; packageWidthCm: number | null; packageLengthCm: number | null }, context: z.RefinementCtx) => {
+const childSkuItem = z.object({ id: z.uuid().nullable(), sku: z.string().trim().min(1).max(80), description: z.string().trim().max(160).nullable() });
+const childSkusJson = z.string().default("[]").transform((value, context) => {
+  try { return z.array(childSkuItem).max(500).parse(JSON.parse(value)); }
+  catch { context.addIssue({ code: "custom", message: "Lista de SKUs filhos inválida" }); return z.NEVER; }
+});
+const productFields = { sku: z.string().trim().min(1).max(80), name: z.string().trim().min(2).max(240), manufacturerCode: z.string().trim().max(120).optional(), supplierId: z.uuid(), fiscalRuleId: z.uuid(), cost: z.coerce.number().min(0), stAmount: z.coerce.number().min(0).default(0), inputIcmsRate: productPercent, inputPisRate: productPercent, inputCofinsRate: productPercent, inputIpiRate: productPercent, mlClassicRate: productPercent, mlPremiumRate: productPercent, amazonRate: productPercent, hasFixedPrice: z.enum(["true", "false"]).transform((value) => value === "true"), fixedPrice: z.preprocess((value) => value == null || value === "" ? undefined : value, z.coerce.number().positive().optional()), packageWeightKg: optionalPositive, packageHeightCm: optionalPositive, packageWidthCm: optionalPositive, packageLengthCm: optionalPositive, childSkusJson };
+const validateProduct = (data: { sku: string; hasFixedPrice: boolean; fixedPrice?: number; packageWeightKg: number | null; packageHeightCm: number | null; packageWidthCm: number | null; packageLengthCm: number | null; childSkusJson: Array<{ sku: string }> }, context: z.RefinementCtx) => {
   if (data.hasFixedPrice && data.fixedPrice == null) context.addIssue({ code: "custom", path: ["fixedPrice"], message: "Informe o preço tabelado" });
   const packaging = [data.packageWeightKg, data.packageHeightCm, data.packageWidthCm, data.packageLengthCm];
   if (packaging.some((value) => value !== null) && packaging.some((value) => value === null)) context.addIssue({ code: "custom", path: ["packageWeightKg"], message: "Preencha todos os dados da embalagem" });
+  const normalized = data.childSkusJson.map((item) => item.sku.trim().toLocaleLowerCase("pt-BR"));
+  if (new Set(normalized).size !== normalized.length || normalized.includes(data.sku.trim().toLocaleLowerCase("pt-BR"))) context.addIssue({ code: "custom", path: ["childSkusJson"], message: "SKU filho repetido ou igual ao SKU pai" });
 };
 const productSchema = z.object(productFields).superRefine(validateProduct);
 const fiscalColumns = "output_icms_sp_rate,output_icms_south_southeast_rate,output_icms_north_northeast_rate";
@@ -93,6 +100,9 @@ async function saveProductMarketplaceRates(supabase: NonNullable<Awaited<ReturnT
   ], { onConflict: "product_id,marketplace_id,listing_type" });
   return error;
 }
+async function saveProductChildSkus(supabase: NonNullable<Awaited<ReturnType<typeof createClient>>>, productId: string, items: Array<{ id: string | null; sku: string; description: string | null }>) {
+  return (await supabase.rpc("replace_product_child_skus", { p_product_id: productId, p_items: items })).error;
+}
 export async function createProduct(formData: FormData) {
   const parsed = productSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return fail("/produtos/novo", "Revise os campos obrigatórios");
@@ -108,6 +118,11 @@ export async function createProduct(formData: FormData) {
   if (error?.code === "42501") fail("/produtos/novo", "Seu usuário não possui permissão para cadastrar produtos. Entre novamente ou solicite acesso ao administrador.");
   if (error) fail("/produtos/novo", "Não foi possível salvar o produto. Revise os dados informados e tente novamente.");
   if (!product || await saveProductMarketplaceRates(supabase, product.id, data)) return fail(product ? `/produtos/${product.id}/editar` : "/produtos/novo", "Produto salvo, mas não foi possível gravar as taxas dos marketplaces");
+  const childSkuError = await saveProductChildSkus(supabase, product.id, data.childSkusJson);
+  if (childSkuError) {
+    await supabase.from("products").delete().eq("id", product.id);
+    return fail("/produtos/novo", childSkuError.code === "23505" ? "Um dos SKUs filhos já está em uso por outro produto" : "Não foi possível salvar os SKUs filhos");
+  }
   revalidatePath("/produtos"); redirect("/produtos?success=Produto+criado+com+sucesso");
 }
 
@@ -124,6 +139,8 @@ export async function updateProduct(formData: FormData) {
   const { error } = await supabase.from("products").update({ sku: data.sku, name: data.name, manufacturer_code: data.manufacturerCode || null, supplier_id: data.supplierId, fiscal_rule_id: data.fiscalRuleId, active: data.active === "true", cost: data.cost, st_amount: data.stAmount, input_icms_rate: data.inputIcmsRate, input_pis_rate: data.inputPisRate, input_cofins_rate: data.inputCofinsRate, input_ipi_rate: data.inputIpiRate, has_fixed_price: data.hasFixedPrice, fixed_price: data.hasFixedPrice ? data.fixedPrice : null, package_weight_kg: data.packageWeightKg, package_height_cm: data.packageHeightCm, package_width_cm: data.packageWidthCm, package_length_cm: data.packageLengthCm, ...rule, updated_at: new Date().toISOString() }).eq("id", data.id);
   if (error) fail(`/produtos/${id}/editar`, "Não foi possível atualizar o produto");
   if (await saveProductMarketplaceRates(supabase, data.id, data)) return fail(`/produtos/${id}/editar`, "Produto atualizado, mas não foi possível salvar as taxas dos marketplaces");
+  const childSkuError = await saveProductChildSkus(supabase, data.id, data.childSkusJson);
+  if (childSkuError) return fail(`/produtos/${id}/editar`, childSkuError.code === "23505" ? "Um dos SKUs filhos já está em uso por outro produto" : "Produto atualizado, mas não foi possível salvar os SKUs filhos");
   revalidatePath("/produtos"); revalidatePath(`/produtos/${id}/editar`); revalidatePath("/reprecificacao"); redirect(`/produtos/${id}/editar?success=${encodeURIComponent("Produto atualizado com sucesso")}` as Route);
 }
 

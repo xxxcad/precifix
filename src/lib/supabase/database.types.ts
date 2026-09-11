@@ -458,6 +458,18 @@ export type Database = {
         Update: { id?: string; product_id?: string; old_cost?: number; new_cost?: number; changed_by?: string | null; changed_at?: string; change_reason?: string | null }
         Relationships: [{ foreignKeyName: "product_cost_history_product_id_fkey"; columns: ["product_id"]; isOneToOne: false; referencedRelation: "products"; referencedColumns: ["id"] }]
       }
+      product_child_skus: {
+        Row: { id: string; product_id: string; sku: string; normalized_sku: string; description: string | null; created_at: string; updated_at: string; created_by: string; updated_by: string }
+        Insert: { id?: string; product_id: string; sku: string; normalized_sku?: string; description?: string | null; created_at?: string; updated_at?: string; created_by?: string; updated_by?: string }
+        Update: { id?: string; product_id?: string; sku?: string; normalized_sku?: string; description?: string | null; created_at?: string; updated_at?: string; created_by?: string; updated_by?: string }
+        Relationships: [{ foreignKeyName: "product_child_skus_product_id_fkey"; columns: ["product_id"]; isOneToOne: false; referencedRelation: "products"; referencedColumns: ["id"] }]
+      }
+      product_child_sku_history: {
+        Row: { id: number; product_id: string; child_sku_id: string | null; action: string; sku: string; description: string | null; previous_sku: string | null; previous_description: string | null; changed_by: string | null; changed_at: string }
+        Insert: { id?: number; product_id: string; child_sku_id?: string | null; action: string; sku: string; description?: string | null; previous_sku?: string | null; previous_description?: string | null; changed_by?: string | null; changed_at?: string }
+        Update: { id?: number; product_id?: string; child_sku_id?: string | null; action?: string; sku?: string; description?: string | null; previous_sku?: string | null; previous_description?: string | null; changed_by?: string | null; changed_at?: string }
+        Relationships: []
+      }
       products: {
         Row: {
           active: boolean
@@ -734,6 +746,11 @@ export type Database = {
         }
         Returns: Json
       }
+      list_repricing_history_with_query: {
+        Args: { p_scope: string; p_query?: string; p_channel?: string; p_page?: number; p_page_size?: number; p_sort?: string; p_direction?: string }
+        Returns: Json
+      }
+      replace_product_child_skus: { Args: { p_product_id: string; p_items: Json }; Returns: undefined }
       profile_display_names: { Args: { target_ids: string[] }; Returns: { id: string; display_name: string | null }[] }
       publish_amazon_shipping_rule: { Args: { payload: Json; reason: string }; Returns: string }
       publish_ml_shipping_rule: { Args: { payload: Json; reason: string }; Returns: string }

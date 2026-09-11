@@ -1,4 +1,5 @@
 "use client";
+/* eslint-disable react-hooks/preserve-manual-memoization -- This legacy calculation workbench intentionally controls memo boundaries around mutable pricing snapshots. */
 
 import { useCallback, useMemo, useState, useSyncExternalStore, useTransition } from "react";
 import { ArrowDown, BarChart3, Check, ChevronDown, ChevronUp, GitCompareArrows, Info, Pencil, Save, Search, Sparkles, X } from "lucide-react";
@@ -6,6 +7,8 @@ import { calculatePricing, calculateTargetPrice } from "@/domain/pricing/engine"
 import type { FiscalRuleKey, MarginClassificationRule, MarketplaceKey, MarketplaceRuleSnapshot, MarketplaceShippingRule, PricingResult, RegionKey, RegionPricingResult, ShippingResolution } from "@/domain/pricing/types";
 import { manualShipping, overrideShipping, resolveAmazonShipping, resolveMercadoLivreShipping } from "@/domain/pricing/shipping";
 import { marginClassifications, marketplaceNames, type DemoProduct } from "@/data/demo-data";
+import { findMatchingChildSku } from "@/domain/products/child-skus";
+import type { ProductChildSkuMap } from "@/lib/data/catalog";
 import { resolveMarketplaceRule, type MarketplaceRuleMap } from "@/domain/pricing/marketplace-rules";
 import { formatMoney, formatPercent } from "@/lib/format";
 import { StatusPill } from "./status-pill";
@@ -156,10 +159,11 @@ function PricingDetailsModal({ item, onClose }: { item: SavedPricing; onClose: (
   </div>;
 }
 
-export function PricingWorkbench({ initialProducts = [], marketplaceRules = {}, classifications = marginClassifications, fiscalRules = [], shippingRule = null, amazonShippingRule = null }: { initialProducts?: DemoProduct[]; marketplaceRules?: MarketplaceRuleMap; classifications?: MarginClassificationRule[]; fiscalRules?: ManualFiscalRule[]; shippingRule?: MarketplaceShippingRule | null; amazonShippingRule?: MarketplaceShippingRule | null }) {
+export function PricingWorkbench({ initialProducts = [], childSkusByProduct = {}, marketplaceRules = {}, classifications = marginClassifications, fiscalRules = [], shippingRule = null, amazonShippingRule = null }: { initialProducts?: ReadonlyArray<DemoProduct>; childSkusByProduct?: ProductChildSkuMap; marketplaceRules?: MarketplaceRuleMap; classifications?: MarginClassificationRule[]; fiscalRules?: ManualFiscalRule[]; shippingRule?: MarketplaceShippingRule | null; amazonShippingRule?: MarketplaceShippingRule | null }) {
   const catalogProducts = initialProducts;
   const [productId, setProductId] = useState("");
   const [query, setQuery] = useState("");
+  const [selectedChildSku, setSelectedChildSku] = useState<Readonly<{ sku: string; description: string | null }> | null>(null);
   const [productListOpen, setProductListOpen] = useState(false);
   const [marketplace, setMarketplace] = useState<MarketplaceKey>("MERCADO_LIVRE");
   const [premium, setPremium] = useState(false);
@@ -259,7 +263,12 @@ export function PricingWorkbench({ initialProducts = [], marketplaceRules = {}, 
   const selected = result?.regions[region];
   const marginMeterPosition = selected ? Math.max(0, Math.min(100, Number(selected.contributionMarginPercent) / 0.15 * 100)) : 0;
   const marginMeterDetails = selected ? `${regionLabels[region]}: margem de ${formatMoney(selected.contributionMarginValue)} (${formatPercent(selected.contributionMarginPercent)}) sobre o preço simulado de ${formatMoney(selected.salePrice)}.` : "";
-  const suggestions = catalogProducts.filter((item) => `${item.sku} ${item.manufacturerCode} ${item.productName}`.toLowerCase().includes(query.toLowerCase())).slice(0, 5);
+  const normalizedQuery = query.trim().toLocaleLowerCase("pt-BR");
+  const suggestions = catalogProducts.flatMap((item) => {
+    const matchedChild = normalizedQuery ? findMatchingChildSku(childSkusByProduct[item.productId], query) : undefined;
+    const parentMatches = !normalizedQuery || `${item.sku} ${item.manufacturerCode} ${item.productName}`.toLocaleLowerCase("pt-BR").includes(normalizedQuery);
+    return parentMatches || matchedChild ? [{ productId: item.productId, parentSku: item.sku, productName: item.productName, supplierName: item.supplierName, manufacturerCode: item.manufacturerCode, childSku: matchedChild?.sku, childDescription: matchedChild?.description ?? null }] : [];
+  }).slice(0, 5);
 
   function updateManualPackaging(field: keyof typeof manualPackaging, input: string) {
     setManualPackaging((current) => ({ ...current, [field]: input.replace(",", ".") }));
@@ -271,11 +280,12 @@ export function PricingWorkbench({ initialProducts = [], marketplaceRules = {}, 
     setCollapsedSteps((current) => ({ ...current, [step]: !current[step] }));
   }
 
-  function chooseProduct(nextId: string) {
+  function chooseProduct(nextId: string, child?: Readonly<{ sku: string; description: string | null }>) {
     const next = catalogProducts.find((item) => item.productId === nextId);
     if (!next) return;
     setProductId(next.productId);
-    setQuery(`${next.sku} · ${next.productName}`);
+    setSelectedChildSku(child ?? null);
+    setQuery(child ? `${child.sku} · ${next.productName}` : `${next.sku} · ${next.productName}`);
     setProductListOpen(false);
     setSalePrice(next.marketplace[marketplace].currentPrice);
     setShipping(next.marketplace[marketplace].freight);
@@ -380,13 +390,13 @@ export function PricingWorkbench({ initialProducts = [], marketplaceRules = {}, 
         <button className={`manual-product-toggle ${manualMode ? "selected" : ""}`} type="button" onClick={() => { setManualMode((current) => !current); setSalePrice(""); setShipping("0"); setShippingEditing(false); setShippingOverridden(false); setEditableRateKeys({}); setRebateValue(""); setProductListOpen(false); }}>Produto manual</button>
         {!manualMode ? <div className="search-combobox">
           <Search size={18} />
-          <input aria-label="Buscar produto" value={query} onFocus={() => setProductListOpen(true)} onChange={(event) => { setQuery(event.target.value); setProductId(""); setProductListOpen(true); }} placeholder="SKU, código ou nome" />
+          <input aria-label="Buscar produto" value={query} onFocus={() => setProductListOpen(true)} onChange={(event) => { setQuery(event.target.value); setProductId(""); setSelectedChildSku(null); setProductListOpen(true); }} placeholder="SKU pai ou filho, código ou nome" />
           <button className="product-list-toggle" type="button" aria-label={productListOpen ? "Fechar lista de produtos" : "Abrir lista de produtos"} aria-expanded={productListOpen} onClick={() => setProductListOpen((current) => !current)}><ChevronDown size={17} /></button>
           {productListOpen && (
             <div className="suggestions">
-              {suggestions.map((item) => (
-                <button type="button" key={item.productId} onClick={() => chooseProduct(item.productId)}>
-                  <span><strong>{item.sku}</strong>{item.productName}</span><small>{item.supplierName} · {item.manufacturerCode}</small>
+              {suggestions.map((suggestion) => (
+                <button type="button" key={suggestion.productId} onClick={() => chooseProduct(suggestion.productId, suggestion.childSku ? { sku: suggestion.childSku, description: suggestion.childDescription } : undefined)}>
+                  <span><strong>{suggestion.childSku ?? suggestion.parentSku}</strong>{suggestion.productName}</span><small>{suggestion.childSku ? `${suggestion.childDescription ? `${suggestion.childDescription} · ` : ""}SKU pai ${suggestion.parentSku}` : `${suggestion.supplierName} · ${suggestion.manufacturerCode}`}</small>
                 </button>
               ))}
             </div>
@@ -407,6 +417,7 @@ export function PricingWorkbench({ initialProducts = [], marketplaceRules = {}, 
           <label className="manual-cubic-weight"><span>Peso cubado (kg)</span><div><input aria-label="Peso cubado do produto manual" value={manualCubicWeight ? Number(manualCubicWeight).toLocaleString("pt-BR", { maximumFractionDigits: 6 }) : ""} placeholder="Calculado automaticamente" readOnly /><span>kg</span></div></label>
           {!manualInputValid && <p className="manual-product-hint">Preencha o custo e todos os impostos de entrada para calcular.{manualHasSt ? " Informe também o valor do ST." : ""}{manualPackagingStarted && !manualPackagingComplete ? " Complete todos os dados da embalagem ou deixe-os vazios." : ""}</p>}
         </div>}
+        {selectedChildSku && !manualMode && <div className="selected-child-sku"><strong>SKU filho pesquisado: {selectedChildSku.sku}</strong><span>{selectedChildSku.description ? `${selectedChildSku.description} · ` : ""}Vinculado ao SKU pai {product.sku}</span></div>}
         {hasSelectedProduct ? <div className="product-context">
           <div><span>Fornecedor</span><strong>{product.supplierName}</strong></div>
           <div><span>Custo</span><strong>{formatMoney(product.cost)}</strong></div>

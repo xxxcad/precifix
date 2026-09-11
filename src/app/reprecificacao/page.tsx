@@ -6,6 +6,7 @@ import { SortableColumn } from "@/components/sortable-column";
 import { loadActiveMarketplaceNames, loadRepricingPage, type HistoryPageResult, type RepricingItem, type SortDirection } from "@/lib/data/catalog";
 
 type RepricingSearch = {
+  query: string;
   canal: string;
   pendingPage: number;
   pendingSort: string;
@@ -18,6 +19,7 @@ type RepricingSearch = {
 function repricingUrl(search: RepricingSearch, changes: Partial<RepricingSearch>) {
   const next = { ...search, ...changes };
   const params = new URLSearchParams();
+  if (next.query) params.set("query", next.query);
   if (next.canal) params.set("canal", next.canal);
   if (next.pendingPage > 1) params.set("pendingPage", String(next.pendingPage));
   if (next.pendingSort !== "date") params.set("pendingSort", next.pendingSort);
@@ -90,6 +92,7 @@ export default async function Page({
   const directionParam = (key: string): SortDirection => params[key] === "asc" ? "asc" : "desc";
   const allowedSort = (key: string, allowed: string[]) => allowed.includes(params[key] ?? "") ? String(params[key]) : "date";
   const search: RepricingSearch = {
+    query: String(params.query ?? "").trim(),
     canal: String(params.canal ?? ""),
     pendingPage: numberParam("pendingPage"),
     pendingSort: allowedSort("pendingSort", ["product", "channel", "type", "reason", "date"]),
@@ -100,8 +103,8 @@ export default async function Page({
   };
   const [channels, pending, history] = await Promise.all([
     loadActiveMarketplaceNames(),
-    loadRepricingPage({ scope: "pending", channel: search.canal, page: search.pendingPage, sort: search.pendingSort, direction: search.pendingDirection }),
-    loadRepricingPage({ scope: "completed", page: search.completedPage, sort: search.completedSort, direction: search.completedDirection }),
+    loadRepricingPage({ scope: "pending", query: search.query, channel: search.canal, page: search.pendingPage, sort: search.pendingSort, direction: search.pendingDirection }),
+    loadRepricingPage({ scope: "completed", query: search.query, page: search.completedPage, sort: search.completedSort, direction: search.completedDirection }),
   ]);
   return (
     <>
@@ -118,6 +121,12 @@ export default async function Page({
           </div>
           <strong className="queue-count">{pending.total}</strong>
         </div>
+        <form className="history-filter" method="get">
+          <input name="query" defaultValue={search.query} placeholder="Buscar por SKU pai, SKU filho ou nome" aria-label="Pesquisar reprecificações" />
+          {search.canal && <input type="hidden" name="canal" value={search.canal} />}
+          <button className="secondary-button" type="submit">Buscar</button>
+          {search.query && <Link className="text-button" href={repricingUrl(search, { query: "", pendingPage: 1, completedPage: 1 })}>Limpar</Link>}
+        </form>
         <nav className="channel-filters">
           <Link className={!search.canal ? "selected" : ""} href={repricingUrl(search, { canal: "", pendingPage: 1 })}>
             Todos

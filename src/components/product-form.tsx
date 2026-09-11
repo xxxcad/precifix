@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { Plus, Trash2 } from "lucide-react";
 import { deleteProduct } from "@/app/cadastros/actions";
+import { hasChildSkuDuplicates, parseBulkChildSkus } from "@/domain/products/child-skus";
 
 export type ProductFiscalRule = {
   id: string; name: string; has_st: boolean;
@@ -11,6 +13,8 @@ export type ProductFiscalRule = {
 type Supplier = { id: string; name: string };
 type Product = { id: string; sku: string; manufacturer_code: string | null; name: string; supplier_id: string; fiscal_rule_id: string; cost: number; st_amount: number | null; active: boolean; input_icms_rate: number; input_pis_rate: number; input_cofins_rate: number; input_ipi_rate: number; has_fixed_price: boolean; fixed_price: number | null; package_weight_kg: number | null; package_height_cm: number | null; package_width_cm: number | null; package_length_cm: number | null; cubic_weight_kg: number | null };
 export type ProductMarketplaceRates = { mlClassic: number | null; mlPremium: number | null; amazon: number | null };
+export type ProductChildSku = { id: string; sku: string; description: string | null };
+export type ProductChildSkuHistory = { id: number; action: string; sku: string; description: string | null; previous_sku: string | null; previous_description: string | null; changed_at: string; changed_by_name: string };
 
 const inputFields = [
   ["inputIcmsRate", "ICMS entrada", "input_icms_rate"], ["inputPisRate", "PIS entrada", "input_pis_rate"],
@@ -21,11 +25,14 @@ const outputDetails = [
   ["output_icms_south_southeast_rate", "ICMS saída Sul/Sudeste"], ["output_icms_north_northeast_rate", "ICMS saída Norte/Nordeste"],
 ] as const;
 
-export function ProductForm({ action, suppliers, rules, product, marketplaceRates, error, success, canEdit = true, canDelete = false }: { action: (formData: FormData) => void | Promise<void>; suppliers: Supplier[]; rules: ProductFiscalRule[]; product?: Product; marketplaceRates?: ProductMarketplaceRates; error?: string; success?: string; canEdit?: boolean; canDelete?: boolean }) {
+export function ProductForm({ action, suppliers, rules, product, marketplaceRates, childSkus = [], childSkuHistory = [], error, success, canEdit = true, canDelete = false }: { action: (formData: FormData) => void | Promise<void>; suppliers: Supplier[]; rules: ProductFiscalRule[]; product?: Product; marketplaceRates?: ProductMarketplaceRates; childSkus?: ProductChildSku[]; childSkuHistory?: ProductChildSkuHistory[]; error?: string; success?: string; canEdit?: boolean; canDelete?: boolean }) {
   const [ruleId, setRuleId] = useState(product?.fiscal_rule_id ?? "");
+  const [parentSku, setParentSku] = useState(product?.sku ?? "");
   const [hasFixedPrice, setHasFixedPrice] = useState(product?.has_fixed_price ?? false);
   const [packaging, setPackaging] = useState({ weight: String(product?.package_weight_kg ?? ""), height: String(product?.package_height_cm ?? ""), width: String(product?.package_width_cm ?? ""), length: String(product?.package_length_cm ?? "") });
   const [showSuccess, setShowSuccess] = useState(Boolean(success));
+  const [variants, setVariants] = useState(() => childSkus.map((item) => ({ ...item, key: item.id })));
+  const [bulkSkus, setBulkSkus] = useState("");
   useEffect(() => {
     if (!success) return;
     const timeout = window.setTimeout(() => setShowSuccess(false), 3000);
@@ -33,9 +40,17 @@ export function ProductForm({ action, suppliers, rules, product, marketplaceRate
   }, [success]);
   const selectedRule = rules.find((rule) => rule.id === ruleId);
   const cubicWeight = [packaging.height, packaging.width, packaging.length].every((item) => Number(item) > 0) ? Number(packaging.height) * Number(packaging.width) * Number(packaging.length) / 6000 : null;
+  const duplicateVariant = hasChildSkuDuplicates(parentSku, variants);
+  const serializedVariants = JSON.stringify(variants.filter((item) => item.sku.trim()).map(({ id, sku, description }) => ({ id: id.startsWith("new-") ? null : id, sku: sku.trim(), description: description?.trim() || null })));
+  function newVariant(sku = "") { const id = `new-${crypto.randomUUID()}`; return { id, key: id, sku, description: null as string | null }; }
+  function addBulkVariants() {
+    const candidates = parseBulkChildSkus(bulkSkus);
+    setVariants((current) => [...current, ...candidates.map((sku) => newVariant(sku))]);
+    setBulkSkus("");
+  }
   return <section className="wide-card form-card">{error && <div className="form-error">{error}</div>}{showSuccess && <div className="form-success product-save-success" role="status">{success}</div>}{!canEdit && <div className="notice-card"><div><strong>Acesso somente para consulta</strong><p>Seu perfil pode visualizar os dados, mas não alterar este produto.</p></div></div>}<fieldset disabled={!canEdit} className="readonly-fieldset"><form action={action} className="entity-form form-grid">
     {product && <input type="hidden" name="id" value={product.id} />}
-    <label><span>SKU</span><input name="sku" defaultValue={product?.sku ?? ""} required /></label>
+    <label><span>SKU</span><input name="sku" value={parentSku} onChange={(event) => setParentSku(event.target.value)} required /></label>
     <label><span>Código do fornecedor</span><input name="manufacturerCode" defaultValue={product?.manufacturer_code ?? ""} /></label>
     <label className="full"><span>Nome do produto</span><input name="name" defaultValue={product?.name ?? ""} required /></label>
     <label><span>Fornecedor</span><select name="supplierId" defaultValue={product?.supplier_id ?? ""} required><option value="">Selecione</option>{suppliers.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>
@@ -46,6 +61,22 @@ export function ProductForm({ action, suppliers, rules, product, marketplaceRate
     <div className="form-section-title full"><strong>Preço tabelado</strong><small>Sinalize quando houver um preço final indicado para os marketplaces.</small></div>
     <label><span>Este produto tem preço tabelado?</span><select name="hasFixedPrice" value={String(hasFixedPrice)} onChange={(event) => setHasFixedPrice(event.target.value === "true")}><option value="false">Não</option><option value="true">Sim</option></select></label>
     {hasFixedPrice && <label><span>Preço tabelado indicado</span><input name="fixedPrice" type="number" min="0.01" step="0.01" defaultValue={product?.fixed_price ?? ""} required /></label>}
+    <div className="form-section-title full"><strong>SKUs filhos / Variações</strong><small>Opcional. Estes códigos usam exatamente a mesma precificação do SKU pai.</small></div>
+    <input type="hidden" name="childSkusJson" value={serializedVariants} />
+    <div className="child-sku-editor full">
+      {variants.map((item, index) => <div className="child-sku-row" key={item.key}>
+        <label><span>SKU filho</span><input value={item.sku} maxLength={80} onChange={(event) => setVariants((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, sku: event.target.value } : row))} placeholder="Ex.: 1234-AZUL" /></label>
+        <label><span>Descrição da variação</span><input value={item.description ?? ""} maxLength={160} onChange={(event) => setVariants((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, description: event.target.value } : row))} placeholder="Ex.: Azul · 500 ml" /></label>
+        <button type="button" className="icon-danger-button" aria-label={`Remover SKU filho ${item.sku || index + 1}`} onClick={() => setVariants((current) => current.filter((_, rowIndex) => rowIndex !== index))}><Trash2 size={16} /></button>
+      </div>)}
+      <button type="button" className="secondary-button child-sku-add" onClick={() => setVariants((current) => [...current, newVariant()])}><Plus size={16} />Adicionar SKU filho</button>
+      <div className="child-sku-bulk">
+        <label><span>Colar vários SKUs</span><textarea value={bulkSkus} onChange={(event) => setBulkSkus(event.target.value)} placeholder={'Um SKU por linha\n1234-AZUL\n1234-VERDE'} /></label>
+        <button type="button" className="secondary-button" disabled={!bulkSkus.trim()} onClick={addBulkVariants}>Adicionar lista</button>
+      </div>
+      {duplicateVariant && <p className="field-error" role="alert">Há um SKU repetido ou igual ao SKU pai. Corrija antes de salvar.</p>}
+    </div>
+    {product && childSkuHistory.length > 0 && <details className="child-sku-history full"><summary>Histórico de SKUs filhos ({childSkuHistory.length})</summary><div className="child-sku-history-list">{childSkuHistory.map((item) => <div key={item.id}><span><strong>{item.sku}</strong><small>{item.description || "Sem descrição"}</small></span><span>{item.action === "CREATED" ? "Adicionado" : item.action === "UPDATED" ? "Alterado" : "Removido"}</span><span>{item.changed_by_name}</span><span>{new Date(item.changed_at).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}</span></div>)}</div></details>}
     <div className="form-section-title full"><strong>Embalagem e frete</strong><small>Campos opcionais. Se preencher um, informe todos. Mercado Livre e Amazon usam o maior valor entre peso real e peso cubado.</small></div>
     <label><span>Peso real (kg)</span><input name="packageWeightKg" type="number" min="0.0001" step="0.0001" value={packaging.weight} onChange={(event) => setPackaging((current) => ({ ...current, weight: event.target.value }))} /></label>
     <label><span>Altura (cm)</span><input name="packageHeightCm" type="number" min="0.01" step="0.01" value={packaging.height} onChange={(event) => setPackaging((current) => ({ ...current, height: event.target.value }))} /></label>
@@ -59,6 +90,6 @@ export function ProductForm({ action, suppliers, rules, product, marketplaceRate
     <label><span>Taxa ML Premium (%)</span><input name="mlPremiumRate" type="number" min="0" max="100" step="0.0001" defaultValue={marketplaceRates?.mlPremium != null ? marketplaceRates.mlPremium * 100 : undefined} required /></label>
     <label><span>Taxa Tarifa Amazon (%)</span><input name="amazonRate" type="number" min="0" max="100" step="0.0001" defaultValue={marketplaceRates?.amazon != null ? marketplaceRates.amazon * 100 : undefined} required /></label>
     {selectedRule && <><div className="form-section-title full"><strong>ICMS de saída da regra fiscal</strong><small>Preenchidos automaticamente conforme a regra selecionada.</small></div>{outputDetails.map(([key, label]) => <label key={key}><span>{label}</span><input value={`${(Number(selectedRule[key]) * 100).toLocaleString("pt-BR", { maximumFractionDigits: 4 })}%`} readOnly /></label>)}</>}
-    <div className="form-actions full">{product && <Link className="secondary-button" href={`/produtos/${product.id}/historico`}>Histórico de custo</Link>}<Link className="secondary-button" href="/produtos">Cancelar</Link><button className="primary-button" type="submit">{product ? "Salvar alterações" : "Salvar produto"}</button></div>
+    <div className="form-actions full">{product && <Link className="secondary-button" href={`/produtos/${product.id}/historico`}>Histórico de custo</Link>}<Link className="secondary-button" href="/produtos">Cancelar</Link><button className="primary-button" type="submit" disabled={duplicateVariant}>{product ? "Salvar alterações" : "Salvar produto"}</button></div>
   </form></fieldset>{product && canDelete && <form action={deleteProduct} className="danger-zone" onSubmit={(event) => { if (!window.confirm(`Excluir definitivamente o produto ${product.sku}? Esta ação não pode ser desfeita.`)) event.preventDefault(); }}><input type="hidden" name="id" value={product.id} /><div><strong>Excluir produto</strong><p>Remove definitivamente o produto e seus dados relacionados.</p></div><button className="danger-button" type="submit">Excluir produto</button></form>}</section>;
 }

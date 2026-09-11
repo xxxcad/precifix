@@ -14,6 +14,7 @@ import type {
   PricingHistoryItem,
   SortDirection,
   SupplierItem,
+  ProductChildSkuMap,
 } from "@/lib/data/catalog";
 import { formatMoney, formatPercent } from "@/lib/format";
 import { PricingHistoryList } from "./pricing-history-list";
@@ -24,9 +25,11 @@ import type { MarginClassificationRule } from "@/domain/pricing/types";
 
 export function ProductsPage({
   products = [],
+  childSkusByProduct = {},
   canManage = false,
 }: {
   products?: DemoProduct[];
+  childSkusByProduct?: ProductChildSkuMap;
   canManage?: boolean;
 }) {
   return (
@@ -44,7 +47,7 @@ export function ProductsPage({
         }
       />
       <section className="wide-card">
-        <ProductsTable products={products} canManage={canManage} />
+        <ProductsTable products={products} childSkusByProduct={childSkusByProduct} canManage={canManage} />
       </section>
     </>
   );

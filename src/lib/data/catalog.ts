@@ -27,14 +27,15 @@ export async function loadMarginClassifications(): Promise<MarginClassificationR
   return (data ?? []).map((item) => ({ id: item.id, label: item.label as MarginClassificationRule["label"], tone: item.tone as MarginClassificationRule["tone"], minPercent: item.min_percent == null ? null : value(item.min_percent), maxPercent: item.max_percent == null ? null : value(item.max_percent) }));
 }
 
-export async function loadCatalogProducts({ includeInactive = false }: { includeInactive?: boolean } = {}): Promise<{ products: DemoProduct[]; source: "database" }> {
+export type ProductChildSkuMap = Readonly<Record<string, ReadonlyArray<Readonly<{ id: string; sku: string; description: string | null }>>>>;
+export async function loadCatalogProducts({ includeInactive = false }: { includeInactive?: boolean } = {}): Promise<{ products: DemoProduct[]; childSkusByProduct: ProductChildSkuMap; source: "database" }> {
   const supabase = await createClient();
   const { data: claims } = await supabase.auth.getClaims();
   if (!claims?.claims?.sub) redirect("/login");
 
   let productsQuery = supabase.from("products").select("*").order("sku").limit(1000);
   if (!includeInactive) productsQuery = productsQuery.eq("active", true);
-  const [productsResult, suppliersResult, rulesResult, configsResult, marketplacesResult] = await Promise.all([
+  const [productsResult, suppliersResult, rulesResult, configsResult, marketplacesResult, childSkusResult] = await Promise.all([
     productsQuery,
     supabase.from("suppliers").select("id,name"),
     supabase.from("fiscal_rules").select("id,code"),
@@ -49,13 +50,16 @@ export async function loadCatalogProducts({ includeInactive = false }: { include
       }
     })(),
     supabase.from("marketplaces").select("id,code").eq("active", true),
+    supabase.from("product_child_skus").select("id,product_id,sku,description").order("sku"),
   ]);
-  if (productsResult.error || suppliersResult.error || rulesResult.error || configsResult.error || marketplacesResult.error) throw new Error("Não foi possível consultar o catálogo. Tente novamente ou contate o administrador.");
+  if (productsResult.error || suppliersResult.error || rulesResult.error || configsResult.error || marketplacesResult.error || childSkusResult.error) throw new Error("Não foi possível consultar o catálogo. Tente novamente ou contate o administrador.");
 
   const suppliers = new Map((suppliersResult.data ?? []).map((row) => [row.id, row.name]));
   const rules = new Map((rulesResult.data ?? []).map((row) => [row.id, row.code as FiscalRuleKey]));
   const marketplaces = new Map((marketplacesResult.data ?? []).map((row) => [row.id, row.code as MarketplaceKey]));
   const configs = new Map<string, Record<string, ConfigRow>>();
+  const childSkus = new Map<string, Array<{ id: string; sku: string; description: string | null }>>();
+  for (const child of childSkusResult.data ?? []) childSkus.set(child.product_id, [...(childSkus.get(child.product_id) ?? []), { id: child.id, sku: child.sku, description: child.description }]);
   for (const config of configsResult.data ?? []) {
     const marketplace = marketplaces.get(config.marketplace_id);
     if (!marketplace) continue;
@@ -64,6 +68,7 @@ export async function loadCatalogProducts({ includeInactive = false }: { include
 
   return {
     source: "database",
+    childSkusByProduct: Object.fromEntries(childSkus),
     products: ((productsResult.data ?? []) as ProductRow[]).map((row) => {
       const productConfigs = configs.get(row.id) ?? {};
       const marketplace = Object.fromEntries((Object.keys(marketplaceDefaults) as MarketplaceKey[]).map((key) => {
@@ -199,12 +204,22 @@ type RpcHistoryPayload = { total?: number; items?: Array<Record<string, unknown>
 const rpcPayload = (data: Json | null): RpcHistoryPayload => data && typeof data === "object" && !Array.isArray(data) ? data as unknown as RpcHistoryPayload : {};
 const pageResult = <T>(payload: RpcHistoryPayload, page: number, pageSize: number, items: T[]): HistoryPageResult<T> => ({ items, page, pageSize, total: Number(payload.total ?? 0) });
 
+async function resolveChildSkuQuery(supabase: Awaited<ReturnType<typeof createClient>>, query: string) {
+  const normalized = query.trim().toLocaleLowerCase("pt-BR");
+  if (!normalized) return query;
+  const { data: child } = await supabase.from("product_child_skus").select("product_id").eq("normalized_sku", normalized).maybeSingle();
+  if (!child) return query;
+  const { data: product } = await supabase.from("products").select("sku").eq("id", child.product_id).single();
+  return product?.sku ?? query;
+}
+
 export async function loadPricingHistory({ query = "", page = 1, pageSize = 20, sort = "date", direction = "desc" }: HistoryOptions = {}): Promise<HistoryPageResult<PricingHistoryItem>> {
   const safePage = Math.max(1, Math.trunc(page));
   const safePageSize = Math.min(20, Math.max(1, Math.trunc(pageSize)));
   const supabase = await createClient();
   if (!supabase) return { items: [], page: safePage, pageSize: safePageSize, total: 0 };
-  const { data, error } = await supabase.rpc("list_operational_history", { p_kind: "pricing", p_query: query, p_page: safePage, p_page_size: safePageSize, p_sort: sort, p_direction: direction });
+  const resolvedQuery = await resolveChildSkuQuery(supabase, query);
+  const { data, error } = await supabase.rpc("list_operational_history", { p_kind: "pricing", p_query: resolvedQuery, p_page: safePage, p_page_size: safePageSize, p_sort: sort, p_direction: direction });
   if (error) return { items: [], page: safePage, pageSize: safePageSize, total: 0 };
   const payload = rpcPayload(data);
   const items = (payload.items ?? []).map((row) => ({ id: String(row.id), createdAt: String(row.created_at), sku: String(row.sku), productName: String(row.product_name), marketplace: String(row.marketplace_name), listingType: String(row.listing_type), salePrice: value(row.sale_price), shippingCost: value(row.shipping_cost), marginValue: value(row.margin_value), marginPercent: value(row.margin_percent) }));
@@ -216,7 +231,8 @@ export async function loadCostChangeHistory({ query = "", page = 1, pageSize = 2
   const safePageSize = Math.min(20, Math.max(1, Math.trunc(pageSize)));
   const supabase = await createClient();
   if (!supabase) return { items: [], page: safePage, pageSize: safePageSize, total: 0 };
-  const { data, error } = await supabase.rpc("list_operational_history", { p_kind: "cost", p_query: query, p_page: safePage, p_page_size: safePageSize, p_sort: sort, p_direction: direction });
+  const resolvedQuery = await resolveChildSkuQuery(supabase, query);
+  const { data, error } = await supabase.rpc("list_operational_history", { p_kind: "cost", p_query: resolvedQuery, p_page: safePage, p_page_size: safePageSize, p_sort: sort, p_direction: direction });
   if (error) return { items: [], page: safePage, pageSize: safePageSize, total: 0 };
   const payload = rpcPayload(data);
   const items = (payload.items ?? []).map((row) => ({ id: String(row.id), changedAt: String(row.changed_at), sku: String(row.sku), productName: String(row.product_name), oldCost: value(row.old_cost), newCost: value(row.new_cost), costDifference: value(row.cost_difference), differencePercent: row.difference_percent == null ? null : value(row.difference_percent), changedBy: String(row.changed_by_name) }));
@@ -228,7 +244,8 @@ export async function loadNewProductHistory({ query = "", page = 1, pageSize = 2
   const safePageSize = Math.min(20, Math.max(1, Math.trunc(pageSize)));
   const supabase = await createClient();
   if (!supabase) return { items: [], page: safePage, pageSize: safePageSize, total: 0 };
-  const { data, error } = await supabase.rpc("list_operational_history", { p_kind: "products", p_query: query, p_page: safePage, p_page_size: safePageSize, p_sort: sort, p_direction: direction });
+  const resolvedQuery = await resolveChildSkuQuery(supabase, query);
+  const { data, error } = await supabase.rpc("list_operational_history", { p_kind: "products", p_query: resolvedQuery, p_page: safePage, p_page_size: safePageSize, p_sort: sort, p_direction: direction });
   if (error) return { items: [], page: safePage, pageSize: safePageSize, total: 0 };
   const payload = rpcPayload(data);
   const items = (payload.items ?? []).map((row) => ({ id: String(row.id), createdAt: String(row.created_at), sku: String(row.sku), productName: String(row.product_name), supplierName: String(row.supplier_name), active: Boolean(row.active) }));
@@ -236,7 +253,7 @@ export async function loadNewProductHistory({ query = "", page = 1, pageSize = 2
 }
 
 export interface RepricingItem { id: string; productId: string; createdAt: string; resolvedAt: string | null; resolvedByName: string | null; sku: string; productName: string; supplierName: string; cost: string; marketplace: string; reason: string; sourceType: string; typeLabel: RepricingTypeLabel; status: string }
-export type RepricingPageOptions = { scope: "pending" | "completed"; channel?: string; page?: number; pageSize?: number; sort?: string; direction?: SortDirection };
+export type RepricingPageOptions = { scope: "pending" | "completed"; query?: string; channel?: string; page?: number; pageSize?: number; sort?: string; direction?: SortDirection };
 
 export async function loadActiveMarketplaceNames(): Promise<string[]> {
   const supabase = await createClient();
@@ -245,12 +262,12 @@ export async function loadActiveMarketplaceNames(): Promise<string[]> {
   return (data ?? []).map((item) => item.name);
 }
 
-export async function loadRepricingPage({ scope, channel = "", page = 1, pageSize = 20, sort = "date", direction = "desc" }: RepricingPageOptions): Promise<HistoryPageResult<RepricingItem>> {
+export async function loadRepricingPage({ scope, query = "", channel = "", page = 1, pageSize = 20, sort = "date", direction = "desc" }: RepricingPageOptions): Promise<HistoryPageResult<RepricingItem>> {
   const safePage = Math.max(1, Math.trunc(page));
   const safePageSize = Math.min(20, Math.max(1, Math.trunc(pageSize)));
   const supabase = await createClient();
   if (!supabase) return { items: [], page: safePage, pageSize: safePageSize, total: 0 };
-  const { data, error } = await supabase.rpc("list_operational_history", { p_kind: scope === "pending" ? "repricing_pending" : "repricing_completed", p_channel: channel, p_page: safePage, p_page_size: safePageSize, p_sort: sort, p_direction: direction });
+  const { data, error } = await supabase.rpc("list_repricing_history_with_query", { p_scope: scope, p_query: query, p_channel: channel, p_page: safePage, p_page_size: safePageSize, p_sort: sort, p_direction: direction });
   if (error) return { items: [], page: safePage, pageSize: safePageSize, total: 0 };
   const payload = rpcPayload(data);
   const items = (payload.items ?? []).map((row) => ({
