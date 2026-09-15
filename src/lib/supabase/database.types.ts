@@ -383,6 +383,83 @@ export type Database = {
           },
         ]
       }
+      manual_pricing_calculations: {
+        Row: {
+          calculation_rule_version_id: string | null
+          created_at: string
+          created_by: string
+          fee_rule_set_id: string | null
+          id: string
+          input_snapshot: Json
+          listing_type: string
+          marketplace_id: string
+          results: Json
+          rule_snapshot: Json
+          sale_price: number
+          shipping_cost: number
+          shipping_rule_set_id: string | null
+        }
+        Insert: {
+          calculation_rule_version_id?: string | null
+          created_at?: string
+          created_by?: string
+          fee_rule_set_id?: string | null
+          id?: string
+          input_snapshot: Json
+          listing_type: string
+          marketplace_id: string
+          results: Json
+          rule_snapshot: Json
+          sale_price: number
+          shipping_cost?: number
+          shipping_rule_set_id?: string | null
+        }
+        Update: {
+          calculation_rule_version_id?: string | null
+          created_at?: string
+          created_by?: string
+          fee_rule_set_id?: string | null
+          id?: string
+          input_snapshot?: Json
+          listing_type?: string
+          marketplace_id?: string
+          results?: Json
+          rule_snapshot?: Json
+          sale_price?: number
+          shipping_cost?: number
+          shipping_rule_set_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "manual_pricing_calculations_calculation_rule_version_id_fkey"
+            columns: ["calculation_rule_version_id"]
+            isOneToOne: false
+            referencedRelation: "calculation_rule_versions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "manual_pricing_calculations_fee_rule_set_id_fkey"
+            columns: ["fee_rule_set_id"]
+            isOneToOne: false
+            referencedRelation: "marketplace_fee_rule_sets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "manual_pricing_calculations_marketplace_id_fkey"
+            columns: ["marketplace_id"]
+            isOneToOne: false
+            referencedRelation: "marketplaces"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "manual_pricing_calculations_shipping_rule_set_id_fkey"
+            columns: ["shipping_rule_set_id"]
+            isOneToOne: false
+            referencedRelation: "marketplace_shipping_rule_sets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       product_marketplace_configs: {
         Row: {
           active: boolean

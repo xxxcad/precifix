@@ -1,19 +1,20 @@
 "use client";
 /* eslint-disable react-hooks/preserve-manual-memoization -- This legacy calculation workbench intentionally controls memo boundaries around mutable pricing snapshots. */
 
-import { useCallback, useMemo, useState, useSyncExternalStore, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { ArrowDown, BarChart3, Check, ChevronDown, ChevronUp, GitCompareArrows, Info, Pencil, Save, Search, Sparkles, X } from "lucide-react";
 import { calculatePricing, calculateTargetPrice } from "@/domain/pricing/engine";
-import type { FiscalRuleKey, MarginClassificationRule, MarketplaceKey, MarketplaceRuleSnapshot, MarketplaceShippingRule, PricingResult, RegionKey, RegionPricingResult, ShippingResolution } from "@/domain/pricing/types";
+import type { FiscalRuleKey, MarginClassificationRule, MarketplaceKey, MarketplaceRuleSnapshot, MarketplaceShippingRule, RegionKey, RegionPricingResult, ShippingResolution } from "@/domain/pricing/types";
 import { manualShipping, overrideShipping, resolveAmazonShipping, resolveMercadoLivreShipping } from "@/domain/pricing/shipping";
 import { marginClassifications, marketplaceNames, type DemoProduct } from "@/data/demo-data";
 import { findMatchingChildSku } from "@/domain/products/child-skus";
 import type { ProductChildSkuMap } from "@/lib/data/catalog";
 import { latestSavedPriceKey, type LatestSavedPriceMap } from "@/domain/pricing/saved-price";
+import type { SavedPricing } from "@/domain/pricing/history";
 import { resolveMarketplaceRule, type MarketplaceRuleMap } from "@/domain/pricing/marketplace-rules";
 import { formatMoney, formatPercent } from "@/lib/format";
 import { StatusPill } from "./status-pill";
-import { savePricingSnapshot } from "@/app/precificar/actions";
+import { loadManualPricingHistory, loadProductPricingHistory, saveManualPricingSnapshot, savePricingSnapshot } from "@/app/precificar/actions";
 import { MarketplaceBrand } from "./marketplace-brand";
 
 const regionLabels: Record<RegionKey, string> = {
@@ -22,24 +23,6 @@ const regionLabels: Record<RegionKey, string> = {
   NORTE_NORDESTE: "Norte / Nordeste",
 };
 
-interface SavedPricing {
-  id: string;
-  createdAt: string;
-  sku: string;
-  productName: string;
-  marketplace: string;
-  listingType: string;
-  price: string;
-  freight: string;
-  marginValue: string;
-  marginPercent: string;
-  snapshot: PricingResult;
-  region?: RegionKey;
-  rebateType?: "VALUE" | "PERCENT";
-  rebateValue?: string;
-  appliedRebate?: string;
-  practicedRate?: string;
-}
 export type ManualFiscalRule = { id: string; name: string; code: FiscalRuleKey; has_st: boolean; output_icms_sp_rate: number; output_icms_south_southeast_rate: number; output_icms_north_northeast_rate: number };
 
 type ComparisonScenario = {
@@ -60,20 +43,6 @@ const isValidNumber = (value: string, { positive = false, maximum }: { positive?
   const number = Number(value.replace(",", "."));
   return Number.isFinite(number) && (positive ? number > 0 : number >= 0) && (maximum === undefined || number <= maximum);
 };
-
-const HISTORY_KEY = "precifix:history:v1";
-const HISTORY_EVENT = "precifix:history-updated";
-const emptyHistory = "[]";
-const subscribeToHistory = (callback: () => void) => {
-  window.addEventListener("storage", callback);
-  window.addEventListener(HISTORY_EVENT, callback);
-  return () => {
-    window.removeEventListener("storage", callback);
-    window.removeEventListener(HISTORY_EVENT, callback);
-  };
-};
-const getHistorySnapshot = () => localStorage.getItem(HISTORY_KEY) ?? emptyHistory;
-const getHistoryServerSnapshot = () => emptyHistory;
 
 function solveDynamicTargetPrice({ initialPrice, product, marketplaceRule, classifications, region, targetPercent, rebateType, rebateValue, resolveShipping }: {
   initialPrice: string; product: DemoProduct; marketplaceRule: MarketplaceRuleSnapshot; classifications: MarginClassificationRule[];
@@ -130,6 +99,7 @@ function PricingDetailsModal({ item, onClose }: { item: SavedPricing; onClose: (
       <div className="pricing-modal-header"><div><span>Precificação salva</span><h2 id="pricing-details-title">{item.sku} · {item.productName}</h2></div><button type="button" aria-label="Fechar detalhes" onClick={onClose}><X size={20} /></button></div>
       <div className="pricing-detail-grid">
         {detail("Data", new Date(item.createdAt).toLocaleString("pt-BR"))}
+        {detail("Salva por", item.createdByName)}
         {detail("Marketplace", item.marketplace)}
         {detail("Modalidade", item.listingType === "PREMIUM" ? "Premium" : item.listingType === "CLASSICO" ? "Clássico" : "Padrão")}
         {detail("Região", regionLabels[selectedRegion])}
@@ -192,7 +162,13 @@ export function PricingWorkbench({ initialProducts = [], childSkusByProduct = {}
   const [manualPackaging, setManualPackaging] = useState({ weight: "", height: "", width: "", length: "" });
   const [collapsedSteps, setCollapsedSteps] = useState<Record<1 | 2 | 3, boolean>>({ 1: false, 2: false, 3: false });
   const [historyDetails, setHistoryDetails] = useState<SavedPricing | null>(null);
+  const [sharedHistory, setSharedHistory] = useState<SavedPricing[]>([]);
+  const [historyError, setHistoryError] = useState("");
+  const [loadedHistoryScope, setLoadedHistoryScope] = useState("");
+  const historyRequestId = useRef(0);
+  const activeHistoryScope = useRef("");
   const [isSaving, startSaving] = useTransition();
+  const [isHistoryPending, startHistoryLoading] = useTransition();
   const selectedCatalogProduct = catalogProducts.find((item) => item.productId === productId);
   const catalogProduct = selectedCatalogProduct ?? catalogProducts[0];
   const manualFiscalRule = fiscalRules.find((item) => item.id === manualRuleId) ?? fiscalRules[0];
@@ -220,11 +196,18 @@ export function PricingWorkbench({ initialProducts = [], childSkusByProduct = {}
     ? { ...productRule, feeBands: productRule.feeBands.map((band) => ({ ...band, percentageRate: String(temporaryRateDecimal) })) }
     : productRule, [marketplace, productRule, temporaryRateDecimal]);
 
-  const historyJson = useSyncExternalStore(subscribeToHistory, getHistorySnapshot, getHistoryServerSnapshot);
-  const history = useMemo<SavedPricing[]>(() => {
-    try { return JSON.parse(historyJson); }
-    catch { return []; }
-  }, [historyJson]);
+  useEffect(() => {
+    const requestId = ++historyRequestId.current;
+    const scope = manualMode ? "manual" : productId;
+    if (!scope) return;
+    startHistoryLoading(async () => {
+      const outcome = manualMode ? await loadManualPricingHistory() : await loadProductPricingHistory(productId);
+      if (requestId !== historyRequestId.current) return;
+      setSharedHistory(outcome.items);
+      setHistoryError(outcome.loaded ? "" : outcome.message);
+      setLoadedHistoryScope(scope);
+    });
+  }, [manualMode, productId]);
 
   const resolveShipping = useCallback((price: string): ShippingResolution => {
     if (!rule.shippingRequired) return manualShipping("0");
@@ -260,7 +243,13 @@ export function PricingWorkbench({ initialProducts = [], childSkusByProduct = {}
     } catch { return null; }
   }, [product, rule, effectiveSalePrice, shippingResolution, marketplaceRebateValue, rebateType, classifications, hasSelectedProduct, manualMode, manualInputValid]);
 
-  const productHistory = hasSelectedProduct ? history.filter((item) => item.sku === product.sku).slice(0, 4) : [];
+  const currentHistoryScope = manualMode ? "manual" : productId;
+  useEffect(() => {
+    activeHistoryScope.current = currentHistoryScope;
+  }, [currentHistoryScope]);
+  const historyLoading = Boolean(currentHistoryScope) && (loadedHistoryScope !== currentHistoryScope || isHistoryPending);
+  const productHistory = hasSelectedProduct && loadedHistoryScope === currentHistoryScope ? sharedHistory : [];
+  const visibleHistoryError = loadedHistoryScope === currentHistoryScope ? historyError : "";
   const selected = result?.regions[region];
   const marginMeterPosition = selected ? Math.max(0, Math.min(100, Number(selected.contributionMarginPercent) / 0.15 * 100)) : 0;
   const marginMeterDetails = selected ? `${regionLabels[region]}: margem de ${formatMoney(selected.contributionMarginValue)} (${formatPercent(selected.contributionMarginPercent)}) sobre o preço simulado de ${formatMoney(selected.salePrice)}.` : "";
@@ -324,27 +313,23 @@ export function PricingWorkbench({ initialProducts = [], childSkusByProduct = {}
 
   function savePricing() {
     if (!result || !selected) return;
-    const entry: SavedPricing = {
-      id: crypto.randomUUID(), createdAt: new Date().toISOString(), sku: product.sku,
-      productName: product.productName, marketplace: marketplaceNames[marketplace], listingType: rule.listingType,
-      price: effectiveSalePrice, freight: shippingResolution.cost,
-      marginValue: selected.contributionMarginValue, marginPercent: selected.contributionMarginPercent, snapshot: result,
-      region, rebateType, rebateValue: marketplaceRebateValue, appliedRebate: selected.marketplaceRebate,
-      practicedRate: result.feeBand.percentageRate,
-    };
-    const next = [entry, ...history].slice(0, 50);
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
-    window.dispatchEvent(new Event(HISTORY_EVENT));
-    if (manualMode) {
-      setSaveMessage("Simulação manual mantida somente neste navegador.");
-      setSaved(true);
-      window.setTimeout(() => { setSaved(false); setSaveMessage(""); }, 2600);
-      return;
-    }
+    const savedScope = manualMode ? "manual" : product.productId;
     startSaving(async () => {
-      const outcome = await savePricingSnapshot({ productId: product.productId, marketplace, listingType: rule.listingType, region, salePrice: effectiveSalePrice, shippingCost: shippingResolution.cost, shippingResolution, rebateType, rebateValue: marketplaceRebateValue, temporaryRate: marketplace === "SHOPEE" ? undefined : rule.feeBands[0]?.percentageRate });
+      const simulation = { marketplace, listingType: rule.listingType, region, salePrice: effectiveSalePrice, shippingCost: shippingResolution.cost, shippingResolution, rebateType, rebateValue: marketplaceRebateValue, temporaryRate: marketplace === "SHOPEE" ? undefined : rule.feeBands[0]?.percentageRate };
+      const outcome = manualMode ? await saveManualPricingSnapshot({ ...simulation, manualProduct: {
+        fiscalRuleId: manualRuleId, cost: manualProduct.cost, stAmount: manualProduct.stAmount,
+        inputIcmsRate: manualProduct.inputIcmsRate, inputPisRate: manualProduct.inputPisRate, inputCofinsRate: manualProduct.inputCofinsRate, inputIpiRate: manualProduct.inputIpiRate,
+        packageWeightKg: manualProduct.packageWeightKg ? Number(manualProduct.packageWeightKg) : null, packageHeightCm: manualProduct.packageHeightCm ? Number(manualProduct.packageHeightCm) : null,
+        packageWidthCm: manualProduct.packageWidthCm ? Number(manualProduct.packageWidthCm) : null, packageLengthCm: manualProduct.packageLengthCm ? Number(manualProduct.packageLengthCm) : null,
+      } }) : await savePricingSnapshot({ ...simulation, productId: product.productId });
       setSaveMessage(outcome.message);
-      setSaved(true);
+      setSaved(outcome.saved);
+      if (outcome.saved && activeHistoryScope.current === savedScope) {
+        historyRequestId.current += 1;
+        setSharedHistory((current) => [outcome.item, ...current.filter((item) => item.id !== outcome.item.id)].slice(0, 4));
+        setLoadedHistoryScope(savedScope);
+        setHistoryError("");
+      }
       window.setTimeout(() => { setSaved(false); setSaveMessage(""); }, 2600);
     });
   }
@@ -507,10 +492,10 @@ export function PricingWorkbench({ initialProducts = [], childSkusByProduct = {}
       </section>
 
       <section className="wide-card">
-        <div className="card-heading"><div><h2>Últimas precificações deste produto</h2><p>O snapshot preserva custos, alíquotas e a versão tarifária.</p></div></div>
-        {productHistory.length ? (
-          <div className="data-table pricing-history"><div className="table-row table-head"><span>Data</span><span>Marketplace</span><span>Preço</span><span>Frete</span><span>Rebate</span><span>Margem</span><span></span></div>{productHistory.map((item) => <div className="table-row" key={item.id}><span>{new Date(item.createdAt).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}</span><span>{item.marketplace}{item.marketplace === marketplaceNames.MERCADO_LIVRE && <small>{item.listingType === "PREMIUM" ? "Premium" : "Clássico"}</small>}</span><span>{formatMoney(item.price)}</span><span>{formatMoney(item.freight)}</span><span>{Number(item.appliedRebate ?? 0) > 0 ? formatMoney(item.appliedRebate ?? "0") : "—"}{Number(item.rebateValue ?? 0) > 0 && <small>{item.rebateType === "PERCENT" ? `${Number(item.rebateValue) * 100}% informado` : "Em valor"}</small>}</span><span>{formatMoney(item.marginValue)}<small>{formatPercent(item.marginPercent)}</small></span><span className="history-row-action"><button type="button" onClick={() => setHistoryDetails(item)}>Ver detalhes</button></span></div>)}</div>
-        ) : <div className="empty-inline">Nenhuma precificação salva para este produto neste navegador.</div>}
+        <div className="card-heading"><div><h2>{manualMode ? "Últimas precificações manuais" : "Últimas precificações deste produto"}</h2><p>Histórico compartilhado entre todos os usuários, com custos, alíquotas e versão tarifária preservados.</p></div></div>
+        {historyLoading ? <div className="empty-inline">Carregando histórico compartilhado…</div> : visibleHistoryError ? <div className="empty-inline error-text" role="alert">{visibleHistoryError}</div> : productHistory.length ? (
+          <div className="data-table pricing-history"><div className="table-row table-head"><span>Data</span><span>Marketplace</span><span>Preço</span><span>Frete</span><span>Rebate</span><span>Margem</span><span></span></div>{productHistory.map((item) => <div className="table-row" key={item.id}><span>{new Date(item.createdAt).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}<small>Por {item.createdByName}</small></span><span>{item.marketplace}{item.marketplace === marketplaceNames.MERCADO_LIVRE && <small>{item.listingType === "PREMIUM" ? "Premium" : "Clássico"}</small>}</span><span>{formatMoney(item.price)}</span><span>{formatMoney(item.freight)}</span><span>{Number(item.appliedRebate) > 0 ? formatMoney(item.appliedRebate) : "—"}{Number(item.rebateValue) > 0 && <small>{item.rebateType === "PERCENT" ? `${Number(item.rebateValue) * 100}% informado` : "Em valor"}</small>}</span><span>{formatMoney(item.marginValue)}<small>{formatPercent(item.marginPercent)}</small></span><span className="history-row-action"><button type="button" onClick={() => setHistoryDetails(item)}>Ver detalhes</button></span></div>)}</div>
+        ) : <div className="empty-inline">{manualMode ? "Nenhuma precificação manual salva." : hasSelectedProduct ? "Nenhuma precificação salva para este produto." : "Selecione um produto para consultar o histórico."}</div>}
       </section>
       {historyDetails && <PricingDetailsModal item={historyDetails} onClose={() => setHistoryDetails(null)} />}
       {result && <section className="analysis-grid">
