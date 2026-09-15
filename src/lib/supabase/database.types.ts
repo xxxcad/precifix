@@ -393,6 +393,7 @@ export type Database = {
           input_snapshot: Json
           listing_type: string
           marketplace_id: string
+          product_name: string
           results: Json
           rule_snapshot: Json
           sale_price: number
@@ -408,6 +409,7 @@ export type Database = {
           input_snapshot: Json
           listing_type: string
           marketplace_id: string
+          product_name?: string
           results: Json
           rule_snapshot: Json
           sale_price: number
@@ -423,6 +425,7 @@ export type Database = {
           input_snapshot?: Json
           listing_type?: string
           marketplace_id?: string
+          product_name?: string
           results?: Json
           rule_snapshot?: Json
           sale_price?: number

@@ -33,6 +33,7 @@ export interface StoredPricingHistoryRow {
   id: string;
   created_at: string;
   marketplace_id: string;
+  product_name?: string | null;
   listing_type: string;
   sale_price: number;
   shipping_cost: number;
@@ -53,7 +54,7 @@ export function storedPricingToHistory(row: StoredPricingHistoryRow, marketplace
   const regional = regions[region];
   const feeBand = rule.feeBand as unknown as PricingResult["feeBand"];
   return {
-    id: row.id, createdAt: row.created_at, sku: String(product.sku ?? "MANUAL"), productName: String(product.productName ?? "Produto manual"), marketplace,
+    id: row.id, createdAt: row.created_at, sku: String(product.sku ?? "MANUAL"), productName: row.product_name?.trim() || String(product.productName ?? "Produto manual"), marketplace,
     listingType: row.listing_type, price: String(row.sale_price), freight: String(row.shipping_cost), marginValue: String(regional?.contributionMarginValue ?? "0"), marginPercent: String(regional?.contributionMarginPercent ?? "0"),
     snapshot: { calculationVersion: String(rule.calculationVersion ?? "recommended-v2") as PricingResult["calculationVersion"], feeBand, regions, snapshot: row.input_snapshot as unknown as PricingResult["snapshot"] },
     region, rebateType: input.marketplaceRebateType === "PERCENT" ? "PERCENT" : "VALUE", rebateValue: String(input.marketplaceRebateValue ?? "0"), appliedRebate: String(regional?.marketplaceRebate ?? "0"),

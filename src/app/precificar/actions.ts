@@ -26,7 +26,7 @@ const saveSchema = simulationSchema.extend({ productId: z.uuid() });
 const optionalPositive = z.union([z.coerce.number().positive(), z.null()]);
 const saveManualSchema = simulationSchema.extend({
   manualProduct: z.object({
-    fiscalRuleId: z.uuid(), cost: z.coerce.number().positive(), stAmount: z.coerce.number().min(0),
+    productName: z.string().trim().max(160), fiscalRuleId: z.uuid(), cost: z.coerce.number().positive(), stAmount: z.coerce.number().min(0),
     inputIcmsRate: z.coerce.number().min(0).max(1), inputPisRate: z.coerce.number().min(0).max(1), inputCofinsRate: z.coerce.number().min(0).max(1), inputIpiRate: z.coerce.number().min(0).max(1),
     packageWeightKg: optionalPositive, packageHeightCm: optionalPositive, packageWidthCm: optionalPositive, packageLengthCm: optionalPositive,
   }).superRefine((product, context) => {
@@ -78,7 +78,7 @@ export async function loadManualPricingHistory(): Promise<SharedPricingHistoryRe
     const supabase = await createClient();
     const { data: authData } = await supabase.auth.getClaims();
     if (!authData?.claims?.sub) return { loaded: false, items: [], message: "Sua sessão expirou. Entre novamente." };
-    const { data, error } = await supabase.from("manual_pricing_calculations").select("id,created_at,created_by,marketplace_id,listing_type,sale_price,shipping_cost,results,input_snapshot,rule_snapshot").order("created_at", { ascending: false }).limit(4);
+    const { data, error } = await supabase.from("manual_pricing_calculations").select("id,created_at,created_by,marketplace_id,product_name,listing_type,sale_price,shipping_cost,results,input_snapshot,rule_snapshot").order("created_at", { ascending: false }).limit(4);
     if (error) return { loaded: false, items: [], message: "Não foi possível carregar as precificações manuais." };
     return { loaded: true, items: await mapStoredHistory(data) };
   } catch {
@@ -130,7 +130,7 @@ async function persistPricing(table: "pricing_calculations" | "manual_pricing_ca
   };
   const insertion = table === "pricing_calculations"
     ? await supabase.from("pricing_calculations").insert({ ...record, product_id: productId! }).select("id,created_at").single()
-    : await supabase.from("manual_pricing_calculations").insert(record).select("id,created_at").single();
+    : await supabase.from("manual_pricing_calculations").insert({ ...record, product_name: product.productName }).select("id,created_at").single();
   if (insertion.error || !insertion.data) return { saved: false, message: "Não foi possível gravar a precificação. Verifique sua conexão e seu perfil de acesso." };
   const selected = result.regions[input.region];
   return { saved: true, message: table === "pricing_calculations" ? "Precificação salva no histórico compartilhado." : "Precificação manual salva no histórico compartilhado.", item: {
@@ -163,7 +163,7 @@ export async function saveManualPricingSnapshot(input: z.input<typeof saveManual
     const packaging = parsed.data.manualProduct;
     const cubicWeight = packaging.packageHeightCm && packaging.packageWidthCm && packaging.packageLengthCm ? packaging.packageHeightCm * packaging.packageWidthCm * packaging.packageLengthCm / 6000 : null;
     const product: DemoProduct = {
-      productId: "manual", sku: "MANUAL", manufacturerCode: "—", productName: "Produto manual", supplierName: "Não aplicável", cost: String(packaging.cost), fiscalRule: fiscalRule.code as FiscalRuleKey,
+      productId: "manual", sku: "MANUAL", manufacturerCode: "—", productName: packaging.productName || "Produto manual", supplierName: "Não aplicável", cost: String(packaging.cost), fiscalRule: fiscalRule.code as FiscalRuleKey,
       stAmount: fiscalRule.has_st ? String(packaging.stAmount) : "0", inputIcmsRate: String(packaging.inputIcmsRate), inputPisRate: String(packaging.inputPisRate), inputCofinsRate: String(packaging.inputCofinsRate), inputIpiRate: String(packaging.inputIpiRate),
       outputIcmsRates: { SP: String(fiscalRule.output_icms_sp_rate), SUL_SUDESTE: String(fiscalRule.output_icms_south_southeast_rate), NORTE_NORDESTE: String(fiscalRule.output_icms_north_northeast_rate) },
       packageWeightKg: packaging.packageWeightKg == null ? null : String(packaging.packageWeightKg), packageHeightCm: packaging.packageHeightCm == null ? null : String(packaging.packageHeightCm), packageWidthCm: packaging.packageWidthCm == null ? null : String(packaging.packageWidthCm), packageLengthCm: packaging.packageLengthCm == null ? null : String(packaging.packageLengthCm), cubicWeightKg: cubicWeight == null ? null : String(cubicWeight),

@@ -19,4 +19,13 @@ describe("storedPricingToHistory", () => {
     }, "Shopee", "Usuário");
     expect(item).toMatchObject({ sku: "MANUAL", productName: "Produto manual", region: "SP", marginValue: "0", marginPercent: "0" });
   });
+
+  it("prioriza o nome persistido da precificação manual", () => {
+    const item = storedPricingToHistory({
+      id: "history-3", created_at: "2026-09-15T12:00:00Z", marketplace_id: "marketplace-2", product_name: "Kit especial", listing_type: "PADRAO", sale_price: 80, shipping_cost: 8.34,
+      input_snapshot: { product: { productName: "Produto manual" } }, rule_snapshot: { feeBand: { percentageRate: "0.14" } }, results: {},
+    }, "Shopee", "Usuário");
+    expect(item.productName).toBe("Kit especial");
+    expect(item.freight).toBe("8.34");
+  });
 });
