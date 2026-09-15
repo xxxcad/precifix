@@ -8,7 +8,7 @@ import type { Json } from "@/lib/supabase/database.types";
 import type { DemoProduct } from "@/data/demo-data";
 import { loadAmazonShippingRule, loadCatalogProducts, loadMarginClassifications, loadMarketplaceRules, loadMercadoLivreShippingRule } from "@/lib/data/catalog";
 import { resolveMarketplaceRule } from "@/domain/pricing/marketplace-rules";
-import { manualShipping, overrideShipping, resolveAmazonShipping, resolveMercadoLivreShipping } from "@/domain/pricing/shipping";
+import { calculateCubicWeightKg, manualShipping, overrideShipping, resolveAmazonShipping, resolveMercadoLivreShipping } from "@/domain/pricing/shipping";
 import { createClient } from "@/lib/supabase/server";
 
 const shippingResolutionSchema = z.object({
@@ -161,12 +161,14 @@ export async function saveManualPricingSnapshot(input: z.input<typeof saveManual
     const { data: fiscalRule } = await supabase.from("fiscal_rules").select("code,name,has_st,output_icms_sp_rate,output_icms_south_southeast_rate,output_icms_north_northeast_rate").eq("id", parsed.data.manualProduct.fiscalRuleId).eq("active", true).maybeSingle();
     if (!fiscalRule) return { saved: false, message: "Regra fiscal não encontrada." };
     const packaging = parsed.data.manualProduct;
-    const cubicWeight = packaging.packageHeightCm && packaging.packageWidthCm && packaging.packageLengthCm ? packaging.packageHeightCm * packaging.packageWidthCm * packaging.packageLengthCm / 6000 : null;
+    const cubicWeight = packaging.packageHeightCm && packaging.packageWidthCm && packaging.packageLengthCm
+      ? calculateCubicWeightKg(String(packaging.packageHeightCm), String(packaging.packageWidthCm), String(packaging.packageLengthCm))
+      : null;
     const product: DemoProduct = {
       productId: "manual", sku: "MANUAL", manufacturerCode: "—", productName: packaging.productName || "Produto manual", supplierName: "Não aplicável", cost: String(packaging.cost), fiscalRule: fiscalRule.code as FiscalRuleKey,
       stAmount: fiscalRule.has_st ? String(packaging.stAmount) : "0", inputIcmsRate: String(packaging.inputIcmsRate), inputPisRate: String(packaging.inputPisRate), inputCofinsRate: String(packaging.inputCofinsRate), inputIpiRate: String(packaging.inputIpiRate),
       outputIcmsRates: { SP: String(fiscalRule.output_icms_sp_rate), SUL_SUDESTE: String(fiscalRule.output_icms_south_southeast_rate), NORTE_NORDESTE: String(fiscalRule.output_icms_north_northeast_rate) },
-      packageWeightKg: packaging.packageWeightKg == null ? null : String(packaging.packageWeightKg), packageHeightCm: packaging.packageHeightCm == null ? null : String(packaging.packageHeightCm), packageWidthCm: packaging.packageWidthCm == null ? null : String(packaging.packageWidthCm), packageLengthCm: packaging.packageLengthCm == null ? null : String(packaging.packageLengthCm), cubicWeightKg: cubicWeight == null ? null : String(cubicWeight),
+      packageWeightKg: packaging.packageWeightKg == null ? null : String(packaging.packageWeightKg), packageHeightCm: packaging.packageHeightCm == null ? null : String(packaging.packageHeightCm), packageWidthCm: packaging.packageWidthCm == null ? null : String(packaging.packageWidthCm), packageLengthCm: packaging.packageLengthCm == null ? null : String(packaging.packageLengthCm), cubicWeightKg: cubicWeight,
       marketplace: { MERCADO_LIVRE: { percentageRate: "0.115", premiumPercentageRate: "0.165", freight: "0", currentPrice: "0" }, SHOPEE: { percentageRate: "0.14", freight: "0", currentPrice: "0" }, AMAZON: { percentageRate: "0.12", freight: "0", currentPrice: "0" } },
       active: true, hasFixedPrice: false, fixedPrice: null, updatedAt: new Date(0).toISOString(),
     };

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveAmazonShipping, resolveMercadoLivreShipping } from "./shipping";
+import { calculateCubicWeightKg, resolveAmazonShipping, resolveMercadoLivreShipping } from "./shipping";
 import type { MarketplaceShippingRule } from "./types";
 
 const rule: MarketplaceShippingRule = {
@@ -18,6 +18,20 @@ describe("resolveMercadoLivreShipping", () => {
   });
   it("usa o peso real em caso de empate", () => expect(resolveMercadoLivreShipping("19", "0.3", "0.3", rule).weightBasis).toBe("REAL"));
   it("limita produtos abaixo de R$ 19 à metade do preço", () => expect(resolveMercadoLivreShipping("10", "0.3", "0.2", rule).cost).toBe("5"));
+  it("não avança a faixa por imprecisão da cubagem do navegador", () => {
+    const cubicWeight = calculateCubicWeightKg("5,6", "100", "75");
+    expect(cubicWeight).toBe("7");
+    const boundaryRule: MarketplaceShippingRule = {
+      ...rule,
+      weightBands: [{ id: "w1", label: "Até 7 kg", maxWeightKg: "7", sortOrder: 1 }, { id: "w2", label: "Mais de 7 kg", maxWeightKg: null, sortOrder: 2 }],
+      rates: [{ id: "r1", priceBandId: "p2", weightBandId: "w1", cost: "20" }, { id: "r2", priceBandId: "p2", weightBandId: "w2", cost: "30" }],
+    };
+    expect(resolveMercadoLivreShipping("19", "1", cubicWeight, boundaryRule).cost).toBe("20");
+  });
+  it("ordena as faixas antes de resolver a matriz", () => {
+    const shuffled = { ...rule, priceBands: [...rule.priceBands].reverse(), weightBands: [...rule.weightBands].reverse() };
+    expect(resolveMercadoLivreShipping("18.99", "0.3", "0.2", shuffled).cost).toBe("5.65");
+  });
   it("resolve todos os limites exatos de uma matriz 30 × 8, incluindo acima de 150 kg e a partir de R$ 200", () => {
     const priceBands = [18.99, 48.99, 78.99, 99.99, 119.99, 149.99, 199.99, null].map((max, index) => ({ id: `p${index}`, label: `Preço ${index}`, maxPrice: max === null ? null : String(max), sortOrder: index + 1 }));
     const limits = [0.3, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 20, 25, 30, 40, 50, 60, 70, 80, 90, 100, 125, 150, null];
@@ -43,6 +57,15 @@ describe("resolveAmazonShipping", () => {
   };
   it("usa o maior entre peso real e cubado", () => expect(resolveAmazonShipping("30", "0.05", "0.1", amazonRule).weightBasis).toBe("CUBIC"));
   it("seleciona as faixas pelos limites inclusivos", () => expect(resolveAmazonShipping("29.99", "0.1", "0.05", amazonRule).cost).toBe("5.65"));
+  it("mantém cubagem decimal exata no limite de 0,1 kg", () => {
+    const cubicWeight = calculateCubicWeightKg("0,1", "6", "1000");
+    expect(cubicWeight).toBe("0.1");
+    expect(resolveAmazonShipping("29.99", "0.05", cubicWeight, amazonRule).weightBandId).toBe("w1");
+  });
+  it("ordena as faixas antes de calcular o adicional", () => {
+    const shuffled = { ...amazonRule, priceBands: [...amazonRule.priceBands].reverse(), weightBands: [...amazonRule.weightBands].reverse() };
+    expect(resolveAmazonShipping("30", "11.01", "1", shuffled).cost).toBe("10");
+  });
   it("soma cada quilo adicional, arredondado para cima, acima de 10 kg", () => {
     const result = resolveAmazonShipping("30", "11.01", "1", amazonRule);
     expect(result.cost).toBe("10");

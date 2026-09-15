@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from
 import { ArrowDown, BarChart3, Check, ChevronDown, ChevronUp, GitCompareArrows, Info, Pencil, Save, Search, Sparkles, X } from "lucide-react";
 import { calculatePricing, calculateTargetPrice } from "@/domain/pricing/engine";
 import type { FiscalRuleKey, MarginClassificationRule, MarketplaceKey, MarketplaceRuleSnapshot, MarketplaceShippingRule, RegionKey, RegionPricingResult, ShippingResolution } from "@/domain/pricing/types";
-import { manualShipping, overrideShipping, resolveAmazonShipping, resolveMercadoLivreShipping } from "@/domain/pricing/shipping";
+import { calculateCubicWeightKg, manualShipping, overrideShipping, resolveAmazonShipping, resolveMercadoLivreShipping } from "@/domain/pricing/shipping";
 import { marginClassifications, marketplaceNames, type DemoProduct } from "@/data/demo-data";
 import { findMatchingChildSku } from "@/domain/products/child-skus";
 import type { ProductChildSkuMap } from "@/lib/data/catalog";
@@ -177,7 +177,7 @@ export function PricingWorkbench({ initialProducts = [], childSkusByProduct = {}
   const manualPackagingValues = Object.values(manualPackaging);
   const manualPackagingStarted = manualPackagingValues.some((value) => value.trim() !== "");
   const manualPackagingComplete = manualPackagingValues.every((value) => isValidNumber(value, { positive: true }));
-  const manualCubicWeight = manualPackagingComplete ? String(Number(manualPackaging.height.replace(",", ".")) * Number(manualPackaging.width.replace(",", ".")) * Number(manualPackaging.length.replace(",", ".")) / 6000) : null;
+  const manualCubicWeight = manualPackagingComplete ? calculateCubicWeightKg(manualPackaging.height, manualPackaging.width, manualPackaging.length) : null;
   const manualInputValid = Boolean(manualFiscalRule)
     && isValidNumber(manualCost, { positive: true })
     && [manualInputIcms, manualInputPis, manualInputCofins, manualInputIpi].every((value) => isValidNumber(value, { maximum: 100 }))
