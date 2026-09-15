@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { latestSavedPriceKey } from "./catalog";
+import { latestSavedPriceKey } from "@/domain/pricing/saved-price";
 
 describe("latestSavedPriceKey", () => {
   it("separa produto, canal, modalidade e região", () => {

@@ -8,12 +8,12 @@ import type { FiscalRuleKey, MarginClassificationRule, MarketplaceKey, Marketpla
 import { manualShipping, overrideShipping, resolveAmazonShipping, resolveMercadoLivreShipping } from "@/domain/pricing/shipping";
 import { marginClassifications, marketplaceNames, type DemoProduct } from "@/data/demo-data";
 import { findMatchingChildSku } from "@/domain/products/child-skus";
-import { latestSavedPriceKey, type ProductChildSkuMap } from "@/lib/data/catalog";
+import type { ProductChildSkuMap } from "@/lib/data/catalog";
+import { latestSavedPriceKey, type LatestSavedPriceMap } from "@/domain/pricing/saved-price";
 import { resolveMarketplaceRule, type MarketplaceRuleMap } from "@/domain/pricing/marketplace-rules";
 import { formatMoney, formatPercent } from "@/lib/format";
 import { StatusPill } from "./status-pill";
 import { savePricingSnapshot } from "@/app/precificar/actions";
-import type { LatestSavedPriceMap } from "@/lib/data/catalog";
 import { MarketplaceBrand } from "./marketplace-brand";
 
 const regionLabels: Record<RegionKey, string> = {

@@ -7,6 +7,8 @@ export type { RepricingTypeLabel } from "@/domain/repricing";
 import type { Json } from "@/lib/supabase/database.types";
 import { createClient } from "@/lib/supabase/server";
 import { loadSupplierCardSummaries, type AnalyticsRegion } from "./supplier-analytics";
+import { latestSavedPriceKey, type LatestSavedPriceMap } from "@/domain/pricing/saved-price";
+export type { LatestSavedPriceMap } from "@/domain/pricing/saved-price";
 
 type ProductRow = {
   id: string; supplier_id: string; fiscal_rule_id: string; sku: string; manufacturer_code: string | null;
@@ -126,8 +128,6 @@ export async function loadMarketplaceShippingRule(code: "MERCADO_LIVRE" | "AMAZO
 export const loadMercadoLivreShippingRule = () => loadMarketplaceShippingRule("MERCADO_LIVRE");
 export const loadAmazonShippingRule = () => loadMarketplaceShippingRule("AMAZON");
 
-export type LatestSavedPriceMap = Readonly<Record<string, string>>;
-export const latestSavedPriceKey = (productId:string, marketplace:MarketplaceKey, listingType:ListingType, region:AnalyticsRegion) => `${productId}:${marketplace}:${listingType}:${region}`;
 export async function loadLatestSavedPrices(): Promise<LatestSavedPriceMap> {
   const supabase = await createClient();
   const { data: marketplaces, error: marketplaceError } = await supabase.from("marketplaces").select("id,code");
