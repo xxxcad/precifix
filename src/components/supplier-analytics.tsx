@@ -6,7 +6,7 @@ import type { Route } from "next";
 import { useRouter } from "next/navigation";
 import { MarketplaceBrand } from "./marketplace-brand";
 import { formatMoney, formatPercent } from "@/lib/format";
-import type { AnalyticsRegion, ScenarioKey, SupplierAnalytics, SupplierProductAnalytics } from "@/lib/data/supplier-analytics";
+import type { AnalyticsRegion, ScenarioKey, SupplierAnalytics } from "@/lib/data/supplier-analytics";
 import type { MarketplaceKey } from "@/domain/pricing/types";
 import { PrintButton } from "./print-button";
 import { SupplierProductTable } from "./supplier-product-history";
@@ -88,10 +88,6 @@ export function SupplierAnalyticsView({ supplier, analytics, filters: initialFil
   const products = filtered.slice((page - 1) * pageSize, page * pageSize);
   const below = analytics.products.filter((product) => product.active && Object.values(product.scenarios).some((metric) => metric.marginPercent < .09)).length;
   const stale = analytics.products.filter((product) => product.active && Object.values(product.scenarios).some((metric) => reportTime - new Date(metric.createdAt).getTime() > 90 * 86400000)).length;
-  const topValue = analytics.topValue ? Math.max(...Object.values(analytics.topValue.scenarios).map((metric) => metric.marginValue)) : null;
-  const topPercent = analytics.topPercent ? Math.max(...Object.values(analytics.topPercent.scenarios).map((metric) => metric.marginPercent)) : null;
-  const lowestPercent = analytics.lowest ? Math.min(...Object.values(analytics.lowest.scenarios).map((metric) => metric.marginPercent)) : null;
-
   return <>
     <div className="supplier-report-actions">
       <Link className="secondary-button" href={`/fornecedores/${supplier.id}/editar`}>Editar fornecedor</Link>
@@ -121,9 +117,9 @@ export function SupplierAnalyticsView({ supplier, analytics, filters: initialFil
     </section>
 
     <section className="supplier-rankings">
-      <article className="wide-card"><div><span>Maior margem em R$</span><strong>{analytics.topValue?.sku ?? "Sem dados"}</strong><small>{analytics.topValue?.name}</small></div>{topValue !== null && <b>{formatMoney(String(topValue))}</b>}</article>
-      <article className="wide-card"><div><span>Maior margem percentual</span><strong>{analytics.topPercent?.sku ?? "Sem dados"}</strong><small>{analytics.topPercent?.name}</small></div>{topPercent !== null && <b>{formatPercent(String(topPercent))}</b>}</article>
-      <article className="wide-card"><div><span>Menor margem</span><strong>{analytics.lowest?.sku ?? "Sem dados"}</strong><small>{analytics.lowest?.name}</small></div>{lowestPercent !== null && <b>{formatPercent(String(lowestPercent))}</b>}</article>
+      <article className="wide-card"><div><span>Maior margem média em R$</span><strong>{analytics.topValue?.product.sku ?? "Sem dados"}</strong><small>{analytics.topValue?.product.name ?? "É necessário ter os quatro canais precificados"}</small></div>{analytics.topValue && <b>{formatMoney(String(analytics.topValue.averageValue))}</b>}</article>
+      <article className="wide-card"><div><span>Maior margem média percentual</span><strong>{analytics.topPercent?.product.sku ?? "Sem dados"}</strong><small>{analytics.topPercent?.product.name ?? "É necessário ter os quatro canais precificados"}</small></div>{analytics.topPercent && <b>{formatPercent(String(analytics.topPercent.averagePercent))}</b>}</article>
+      <article className="wide-card"><div><span>Menor margem média percentual</span><strong>{analytics.lowest?.product.sku ?? "Sem dados"}</strong><small>{analytics.lowest?.product.name ?? "É necessário ter os quatro canais precificados"}</small></div>{analytics.lowest && <b>{formatPercent(String(analytics.lowest.averagePercent))}</b>}</article>
     </section>
 
     <section className="wide-card supplier-filter-section" aria-labelledby="supplier-filters-title">

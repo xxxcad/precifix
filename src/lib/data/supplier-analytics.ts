@@ -7,12 +7,19 @@ export type ScenarioMetric = { price:number; shipping:number; marginValue:number
 export type SupplierPricingHistory = ScenarioMetric & { id:string; scenario:ScenarioKey; region:AnalyticsRegion };
 export type SupplierProductAnalytics = { id:string; sku:string; childSkus:string[]; name:string; manufacturerCode:string|null; active:boolean; cost:number; pending:boolean; scenarios:Partial<Record<ScenarioKey,ScenarioMetric>>; pricingHistory:SupplierPricingHistory[] };
 export type SupplierAverageMetric = { value:number; percent:number; ticket:number; count:number };
-export type SupplierAnalytics = { products:SupplierProductAnalytics[]; averages:Partial<Record<ScenarioKey,SupplierAverageMetric>>; overall:SupplierAverageMetric; activeProducts:number; pricedProducts:number; pendingProducts:number; topValue:SupplierProductAnalytics|null; topPercent:SupplierProductAnalytics|null; lowest:SupplierProductAnalytics|null; generatedAt:number };
+export type SupplierProductRanking = { product:SupplierProductAnalytics; averageValue:number; averagePercent:number };
+export type SupplierAnalytics = { products:SupplierProductAnalytics[]; averages:Partial<Record<ScenarioKey,SupplierAverageMetric>>; overall:SupplierAverageMetric; activeProducts:number; pricedProducts:number; pendingProducts:number; topValue:SupplierProductRanking|null; topPercent:SupplierProductRanking|null; lowest:SupplierProductRanking|null; generatedAt:number };
 export type SupplierCardSummary = { averageMarginValue:number|null; averageMarginPercent:number|null; pricedProducts:number };
 
 const scenario = (code:string, listing:string):ScenarioKey|undefined => code === "MERCADO_LIVRE" ? (listing === "PREMIUM" ? "ML_PREMIUM" : "ML_CLASSICO") : code === "SHOPEE" ? "SHOPEE" : code === "AMAZON" ? "AMAZON" : undefined;
 const obj = (value:Json):Record<string,unknown> => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string,unknown> : {};
 export const calculateSupplierAverage = (items:ScenarioMetric[]):SupplierAverageMetric|undefined => items.length?{value:items.reduce((a,b)=>a+b.marginValue,0)/items.length,percent:items.reduce((a,b)=>a+b.marginPercent,0)/items.length,ticket:items.reduce((a,b)=>a+b.price,0)/items.length,count:items.length}:undefined;
+export const calculateProductScenarioAverage = (product:SupplierProductAnalytics):SupplierProductRanking|undefined => {
+  const metrics=(['ML_CLASSICO','ML_PREMIUM','SHOPEE','AMAZON'] as ScenarioKey[]).map(key=>product.scenarios[key]);
+  if(metrics.some(metric=>!metric))return undefined;
+  const completeMetrics=metrics as ScenarioMetric[];
+  return {product,averageValue:completeMetrics.reduce((sum,metric)=>sum+metric.marginValue,0)/completeMetrics.length,averagePercent:completeMetrics.reduce((sum,metric)=>sum+metric.marginPercent,0)/completeMetrics.length};
+};
 
 export async function loadSupplierCardSummaries(region:AnalyticsRegion="SP"):Promise<Map<string,SupplierCardSummary>>{
   const supabase=await createClient();
@@ -44,6 +51,6 @@ export async function loadSupplierAnalytics(supplierId:string, region:AnalyticsR
   const rows=(products??[]).map(p=>({id:p.id,sku:p.sku,childSkus:childrenByProduct.get(p.id)??[],name:p.name,manufacturerCode:p.manufacturer_code,active:p.active,cost:Number(p.cost),pending:pendingSet.has(p.id),scenarios:Object.fromEntries((["ML_CLASSICO","ML_PREMIUM","SHOPEE","AMAZON"] as ScenarioKey[]).flatMap(k=>{const v=latest.get(`${p.id}:${k}`);return v?[[k,v]]:[]})),pricingHistory:historyByProduct.get(p.id)??[]} as SupplierProductAnalytics));
   const active=rows.filter(p=>p.active), observations=active.flatMap(p=>Object.values(p.scenarios));
   const averages=Object.fromEntries((["ML_CLASSICO","ML_PREMIUM","SHOPEE","AMAZON"] as ScenarioKey[]).flatMap(k=>{const v=calculateSupplierAverage(active.flatMap(p=>p.scenarios[k]?[p.scenarios[k]!]:[]));return v?[[k,v]]:[]}));
-  const score=(p:SupplierProductAnalytics,field:"marginValue"|"marginPercent",mode:"max"|"min"="max")=>(mode==="max"?Math.max:Math.min)(...Object.values(p.scenarios).map(v=>v[field]),mode==="max"?-Infinity:Infinity); const priced=active.filter(p=>Object.keys(p.scenarios).length);
-  return {products:rows,averages,overall:calculateSupplierAverage(observations)??{value:0,percent:0,ticket:0,count:0},activeProducts:active.length,pricedProducts:priced.length,pendingProducts:active.filter(p=>p.pending).length,topValue:priced.toSorted((a,b)=>score(b,"marginValue")-score(a,"marginValue"))[0]??null,topPercent:priced.toSorted((a,b)=>score(b,"marginPercent")-score(a,"marginPercent"))[0]??null,lowest:priced.toSorted((a,b)=>score(a,"marginPercent","min")-score(b,"marginPercent","min"))[0]??null,generatedAt:Date.now()};
+  const priced=active.filter(p=>Object.keys(p.scenarios).length),ranked=active.flatMap(product=>{const ranking=calculateProductScenarioAverage(product);return ranking?[ranking]:[]});
+  return {products:rows,averages,overall:calculateSupplierAverage(observations)??{value:0,percent:0,ticket:0,count:0},activeProducts:active.length,pricedProducts:priced.length,pendingProducts:active.filter(p=>p.pending).length,topValue:ranked.toSorted((a,b)=>b.averageValue-a.averageValue)[0]??null,topPercent:ranked.toSorted((a,b)=>b.averagePercent-a.averagePercent)[0]??null,lowest:ranked.toSorted((a,b)=>a.averagePercent-b.averagePercent)[0]??null,generatedAt:Date.now()};
 }
