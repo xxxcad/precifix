@@ -10,12 +10,11 @@ import type { AnalyticsRegion, ScenarioKey, SupplierAnalytics, SupplierProductAn
 import type { MarketplaceKey } from "@/domain/pricing/types";
 import { PrintButton } from "./print-button";
 import { SupplierProductTable } from "./supplier-product-history";
+import { sortSupplierProducts, type SupplierProductSortDirection, type SupplierProductSortKey } from "@/lib/supplier-product-sorting";
 
 const labels: Record<ScenarioKey, string> = { ML_CLASSICO: "ML Clássico", ML_PREMIUM: "ML Premium", SHOPEE: "Shopee", AMAZON: "Amazon" };
 const scenarios = Object.keys(labels) as ScenarioKey[];
 const brand = (key: ScenarioKey): MarketplaceKey => key.startsWith("ML_") ? "MERCADO_LIVRE" : key as MarketplaceKey;
-const newestMetric = (product: SupplierProductAnalytics) => Object.values(product.scenarios).toSorted((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
-
 const reportUrl = (supplierId: string, values: Record<string, string | number | boolean | undefined>) => {
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(values)) if (value !== undefined && value !== false && value !== "") params.set(key, String(value === true ? 1 : value));
@@ -31,8 +30,8 @@ export type SupplierAnalyticsFilters = {
   pending: "ALL" | "YES" | "NO";
   age: "ALL" | "30" | "60" | "90";
   margin: "ALL" | "BAD" | "ACCEPTABLE";
-  sort: "product" | "cost" | "price" | "marginValue" | "marginPercent" | "date" | "status";
-  direction: "asc" | "desc";
+  sort: SupplierProductSortKey;
+  direction: SupplierProductSortDirection;
   page: number;
 };
 
@@ -80,22 +79,7 @@ export function SupplierAnalyticsView({ supplier, analytics, filters: initialFil
     return true;
   });
 
-  const direction = effectiveFilters.direction === "asc" ? 1 : -1;
-  filtered = filtered.toSorted((a, b) => {
-    const am = newestMetric(a);
-    const bm = newestMetric(b);
-    const values = {
-      product: [`${a.sku} ${a.name}`, `${b.sku} ${b.name}`],
-      cost: [a.cost, b.cost],
-      price: [am?.price ?? -Infinity, bm?.price ?? -Infinity],
-      marginValue: [am?.marginValue ?? -Infinity, bm?.marginValue ?? -Infinity],
-      marginPercent: [am?.marginPercent ?? -Infinity, bm?.marginPercent ?? -Infinity],
-      date: [am?.createdAt ?? "", bm?.createdAt ?? ""],
-      status: [Number(a.active), Number(b.active)],
-    } as const;
-    const [av, bv] = values[effectiveFilters.sort];
-    return (typeof av === "number" ? av - Number(bv) : String(av).localeCompare(String(bv), "pt-BR", { numeric: true })) * direction;
-  });
+  filtered = sortSupplierProducts(filtered, effectiveFilters.sort, effectiveFilters.direction, effectiveFilters.scenario);
 
   const pageSize = 20;
   const total = filtered.length;
