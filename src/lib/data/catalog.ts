@@ -6,6 +6,7 @@ import { repricingTypeLabel, type RepricingTypeLabel } from "@/domain/repricing"
 export type { RepricingTypeLabel } from "@/domain/repricing";
 import type { Json } from "@/lib/supabase/database.types";
 import { createClient } from "@/lib/supabase/server";
+import { loadSupplierCardSummaries, type AnalyticsRegion } from "./supplier-analytics";
 
 type ProductRow = {
   id: string; supplier_id: string; fiscal_rule_id: string; sku: string; manufacturer_code: string | null;
@@ -75,14 +76,13 @@ export async function loadCatalogProducts({ includeInactive = false }: { include
         const listingType = key === "MERCADO_LIVRE" ? "CLASSICO" : "PADRAO";
         const config = productConfigs[`${key}:${listingType}`];
         const premiumConfig = key === "MERCADO_LIVRE" ? productConfigs["MERCADO_LIVRE:PREMIUM"] : undefined;
-        const suggested = Math.max(Number(row.cost) * 2, 0.01).toFixed(2);
         return [key, {
           percentageRate: value(config?.commission_rate_override, Number(marketplaceDefaults[key])),
           premiumPercentageRate: key === "MERCADO_LIVRE" ? value(premiumConfig?.commission_rate_override, Number(config?.commission_rate_override ?? marketplaceDefaults[key]) + 0.05) : undefined,
           usesCommissionOverride: config?.commission_rate_override != null,
           usesPremiumCommissionOverride: premiumConfig?.commission_rate_override != null,
           freight: value(config?.freight_cost),
-          currentPrice: value(config?.current_sale_price, Number(suggested)),
+          currentPrice: config?.current_sale_price == null ? "" : value(config.current_sale_price),
         }];
       })) as DemoProduct["marketplace"];
       return {
@@ -125,6 +125,30 @@ export async function loadMarketplaceShippingRule(code: "MERCADO_LIVRE" | "AMAZO
 
 export const loadMercadoLivreShippingRule = () => loadMarketplaceShippingRule("MERCADO_LIVRE");
 export const loadAmazonShippingRule = () => loadMarketplaceShippingRule("AMAZON");
+
+export type LatestSavedPriceMap = Readonly<Record<string, string>>;
+export const latestSavedPriceKey = (productId:string, marketplace:MarketplaceKey, listingType:ListingType, region:AnalyticsRegion) => `${productId}:${marketplace}:${listingType}:${region}`;
+export async function loadLatestSavedPrices(): Promise<LatestSavedPriceMap> {
+  const supabase = await createClient();
+  const { data: marketplaces, error: marketplaceError } = await supabase.from("marketplaces").select("id,code");
+  if (marketplaceError) return {};
+  const codes = new Map((marketplaces ?? []).map((item) => [item.id, item.code]));
+  const prices: Record<string, string> = {};
+  for (let from = 0; ; from += 1000) {
+    const page = await supabase.from("pricing_calculations").select("product_id,marketplace_id,listing_type,sale_price,rule_snapshot,created_at").order("created_at", { ascending: false }).range(from, from + 999);
+    if (page.error) return prices;
+    for (const row of page.data ?? []) {
+      const snapshot = row.rule_snapshot && typeof row.rule_snapshot === "object" && !Array.isArray(row.rule_snapshot) ? row.rule_snapshot as Record<string, Json | undefined> : {};
+      const selectedRegion = String(snapshot.selectedRegion ?? "SP") as AnalyticsRegion;
+      const code = codes.get(row.marketplace_id);
+      if (!code) continue;
+      const key = latestSavedPriceKey(row.product_id,code as MarketplaceKey,row.listing_type as ListingType,selectedRegion);
+      if (!(key in prices)) prices[key] = value(row.sale_price);
+    }
+    if ((page.data?.length ?? 0) < 1000) break;
+  }
+  return prices;
+}
 
 export interface MarketplaceRuleCard {
   marketplace: MarketplaceKey; marketplaceName: string; listingType: ListingType; version: number;
@@ -172,14 +196,15 @@ export async function loadMarketplaceRuleCards(): Promise<MarketplaceRuleCard[]>
 }
 
 
-export interface SupplierItem { id: string; name: string; active: boolean; logoUrl: string | null; productCount: number }
+export interface SupplierItem { id: string; name: string; active: boolean; logoUrl: string | null; productCount: number; averageMarginValue:number|null; averageMarginPercent:number|null; pricedProducts:number }
 export async function loadSuppliers(): Promise<SupplierItem[]> {
   const supabase = await createClient();
-  const [supplierResult, productResult] = await Promise.all([supabase.from("suppliers").select("id,name,active,logo_path").order("name"), supabase.from("products").select("supplier_id")]);
+  const [supplierResult, productResult, summaries] = await Promise.all([supabase.from("suppliers").select("id,name,active,logo_path").order("name"), supabase.from("products").select("supplier_id"), loadSupplierCardSummaries("SP")]);
   if (supplierResult.error || productResult.error) throw new Error("Não foi possível consultar os fornecedores.");
   return Promise.all((supplierResult.data ?? []).map(async (row) => {
     const signed = row.logo_path ? await supabase.storage.from("supplier-logos").createSignedUrl(row.logo_path, 3600) : null;
-    return { id: row.id, name: row.name, active: row.active, logoUrl: signed?.data?.signedUrl ?? null, productCount: (productResult.data ?? []).filter((product) => product.supplier_id === row.id).length };
+    const analytics=summaries.get(row.id);
+    return { id: row.id, name: row.name, active: row.active, logoUrl: signed?.data?.signedUrl ?? null, productCount: (productResult.data ?? []).filter((product) => product.supplier_id === row.id).length, averageMarginValue:analytics?.averageMarginValue??null, averageMarginPercent:analytics?.averageMarginPercent??null, pricedProducts:analytics?.pricedProducts??0 };
   }));
 }
 

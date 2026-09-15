@@ -8,11 +8,12 @@ import type { FiscalRuleKey, MarginClassificationRule, MarketplaceKey, Marketpla
 import { manualShipping, overrideShipping, resolveAmazonShipping, resolveMercadoLivreShipping } from "@/domain/pricing/shipping";
 import { marginClassifications, marketplaceNames, type DemoProduct } from "@/data/demo-data";
 import { findMatchingChildSku } from "@/domain/products/child-skus";
-import type { ProductChildSkuMap } from "@/lib/data/catalog";
+import { latestSavedPriceKey, type ProductChildSkuMap } from "@/lib/data/catalog";
 import { resolveMarketplaceRule, type MarketplaceRuleMap } from "@/domain/pricing/marketplace-rules";
 import { formatMoney, formatPercent } from "@/lib/format";
 import { StatusPill } from "./status-pill";
 import { savePricingSnapshot } from "@/app/precificar/actions";
+import type { LatestSavedPriceMap } from "@/lib/data/catalog";
 import { MarketplaceBrand } from "./marketplace-brand";
 
 const regionLabels: Record<RegionKey, string> = {
@@ -159,7 +160,7 @@ function PricingDetailsModal({ item, onClose }: { item: SavedPricing; onClose: (
   </div>;
 }
 
-export function PricingWorkbench({ initialProducts = [], childSkusByProduct = {}, marketplaceRules = {}, classifications = marginClassifications, fiscalRules = [], shippingRule = null, amazonShippingRule = null }: { initialProducts?: ReadonlyArray<DemoProduct>; childSkusByProduct?: ProductChildSkuMap; marketplaceRules?: MarketplaceRuleMap; classifications?: MarginClassificationRule[]; fiscalRules?: ManualFiscalRule[]; shippingRule?: MarketplaceShippingRule | null; amazonShippingRule?: MarketplaceShippingRule | null }) {
+export function PricingWorkbench({ initialProducts = [], childSkusByProduct = {}, marketplaceRules = {}, classifications = marginClassifications, fiscalRules = [], shippingRule = null, amazonShippingRule = null, latestSavedPrices = {} }: { initialProducts?: ReadonlyArray<DemoProduct>; childSkusByProduct?: ProductChildSkuMap; marketplaceRules?: MarketplaceRuleMap; classifications?: MarginClassificationRule[]; fiscalRules?: ManualFiscalRule[]; shippingRule?: MarketplaceShippingRule | null; amazonShippingRule?: MarketplaceShippingRule | null; latestSavedPrices?: LatestSavedPriceMap }) {
   const catalogProducts = initialProducts;
   const [productId, setProductId] = useState("");
   const [query, setQuery] = useState("");
@@ -280,6 +281,11 @@ export function PricingWorkbench({ initialProducts = [], childSkusByProduct = {}
     setCollapsedSteps((current) => ({ ...current, [step]: !current[step] }));
   }
 
+  function rememberedPrice(nextProduct: DemoProduct, nextMarketplace: MarketplaceKey, nextPremium: boolean, nextRegion: RegionKey) {
+    const listing = nextMarketplace === "MERCADO_LIVRE" ? (nextPremium ? "PREMIUM" : "CLASSICO") : "PADRAO";
+    return latestSavedPrices[latestSavedPriceKey(nextProduct.productId,nextMarketplace,listing,nextRegion)] ?? nextProduct.marketplace[nextMarketplace].currentPrice ?? "";
+  }
+
   function chooseProduct(nextId: string, child?: Readonly<{ sku: string; description: string | null }>) {
     const next = catalogProducts.find((item) => item.productId === nextId);
     if (!next) return;
@@ -287,7 +293,8 @@ export function PricingWorkbench({ initialProducts = [], childSkusByProduct = {}
     setSelectedChildSku(child ?? null);
     setQuery(child ? `${child.sku} · ${next.productName}` : `${next.sku} · ${next.productName}`);
     setProductListOpen(false);
-    setSalePrice(next.marketplace[marketplace].currentPrice);
+    setRegion("SP");
+    setSalePrice(rememberedPrice(next, marketplace, premium, "SP"));
     setShipping(next.marketplace[marketplace].freight);
     setShippingOverridden(false);
     setShippingEditing(false);
@@ -299,10 +306,18 @@ export function PricingWorkbench({ initialProducts = [], childSkusByProduct = {}
     setMarketplace(next);
     setPremium(false);
     const selectedProduct = manualMode ? manualProduct : selectedCatalogProduct;
-    setSalePrice(selectedProduct?.marketplace[next].currentPrice ?? "");
+    setSalePrice(selectedProduct && !manualMode ? rememberedPrice(selectedProduct, next, false, region) : "");
     setShipping(selectedProduct?.marketplace[next].freight ?? "0");
     setShippingOverridden(false);
     setShippingEditing(false);
+    setEditableRateKeys({});
+    setRebateValue("");
+  }
+
+
+  function chooseMercadoLivreMode(nextPremium: boolean) {
+    setPremium(nextPremium);
+    if (selectedCatalogProduct && !manualMode) setSalePrice(rememberedPrice(selectedCatalogProduct, "MERCADO_LIVRE", nextPremium, region));
     setEditableRateKeys({});
     setRebateValue("");
   }
@@ -434,7 +449,7 @@ export function PricingWorkbench({ initialProducts = [], childSkusByProduct = {}
           ))}
         </div>
         {marketplace === "MERCADO_LIVRE" && (
-          <div className="segmented"><button type="button" className={!premium ? "selected" : ""} onClick={() => setPremium(false)}>Clássico</button><button type="button" className={premium ? "selected" : ""} onClick={() => setPremium(true)}>Premium</button></div>
+          <div className="segmented"><button type="button" className={!premium ? "selected" : ""} onClick={() => chooseMercadoLivreMode(false)}>Clássico</button><button type="button" className={premium ? "selected" : ""} onClick={() => chooseMercadoLivreMode(true)}>Premium</button></div>
         )}
         {hasSelectedProduct && marketplace !== "SHOPEE" && <label className="marketplace-rate-field"><span>{marketplace === "AMAZON" ? "Taxa Tarifa Amazon praticada" : premium ? "Taxa ML Premium praticada" : "Taxa ML Clássico praticada"}</span><div><input aria-label="Taxa praticada nesta simulação" inputMode="decimal" value={practicedRatePercent} readOnly={!rateEditing} onChange={(event) => setTemporaryRates((current) => ({ ...current, [rateKey]: event.target.value.replace(",", ".") }))} /><span>%</span><button type="button" className={rateEditing ? "field-edit-button active" : "field-edit-button"} aria-label={rateEditing ? "Taxa liberada para simulação" : "Editar taxa nesta simulação"} title="Editar nesta simulação" onClick={() => setEditableRateKeys((current) => ({ ...current, [rateKey]: true }))}><Pencil size={15} /></button></div><small>{rateEditing ? "Edição liberada. A alteração vale somente para esta simulação." : "Herdada do cadastro do produto. Clique no lápis para simular outro valor."}</small></label>}
         </div>

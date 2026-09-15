@@ -56,10 +56,17 @@ export function ProductsPage({
 export function SuppliersPage({
   suppliers,
   canManage = false,
+  query = "",
+  status = "ALL",
+  sort = "name",
 }: {
   suppliers: SupplierItem[];
   canManage?: boolean;
+  query?: string;
+  status?: "ALL" | "ACTIVE" | "INACTIVE";
+  sort?: "name" | "margin" | "coverage" | "products";
 }) {
+  const visibleSuppliers = suppliers.filter((supplier) => (!query || supplier.name.toLocaleLowerCase("pt-BR").includes(query.toLocaleLowerCase("pt-BR"))) && (status === "ALL" || supplier.active === (status === "ACTIVE"))).toSorted((a,b) => sort === "margin" ? (b.averageMarginPercent ?? -Infinity) - (a.averageMarginPercent ?? -Infinity) : sort === "coverage" ? (b.productCount ? b.pricedProducts / b.productCount : 0) - (a.productCount ? a.pricedProducts / a.productCount : 0) : sort === "products" ? b.productCount - a.productCount : a.name.localeCompare(b.name,"pt-BR"));
   return (
     <>
       <PageHeader
@@ -74,8 +81,9 @@ export function SuppliersPage({
           ) : undefined
         }
       />
+      <form className="toolbar supplier-list-toolbar"><input name="query" defaultValue={query} placeholder="Buscar fornecedor"/><select name="status" defaultValue={status}><option value="ALL">Todos os status</option><option value="ACTIVE">Ativos</option><option value="INACTIVE">Inativos</option></select><select name="sort" defaultValue={sort}><option value="name">Nome</option><option value="margin">Maior margem média</option><option value="coverage">Maior cobertura</option><option value="products">Mais produtos</option></select><button className="secondary-button">Aplicar</button></form>
       <section className="card-grid">
-        {suppliers.map((supplier) => (
+        {visibleSuppliers.map((supplier) => (
           <article className="entity-card supplier-card" key={supplier.id}>
             {supplier.logoUrl ? (
               <Image
@@ -96,6 +104,7 @@ export function SuppliersPage({
                 {supplier.productCount === 1 ? "" : "s"} vinculado
                 {supplier.productCount === 1 ? "" : "s"}
               </p>
+              <p className="supplier-card-margin">{supplier.averageMarginPercent==null?"Sem precificações":<><strong>{formatPercent(String(supplier.averageMarginPercent))}</strong> · {formatMoney(String(supplier.averageMarginValue))}</>}<small>{supplier.pricedProducts} de {supplier.productCount} produtos</small></p>
             </div>
             <span
               className={supplier.active ? "active-state" : "extinct-state"}
@@ -109,16 +118,11 @@ export function SuppliersPage({
                 "Inativo"
               )}
             </span>
-            <Link
-              className="entity-edit"
-              href={`/fornecedores/${supplier.id}/editar`}
-            >
-              <Edit3 size={15} />
-              {canManage ? "Editar" : "Visualizar"}
-            </Link>
+            <div className="supplier-card-actions"><Link className="text-link" href={`/fornecedores/${supplier.id}`}>Ver análise</Link>{canManage&&<Link className="text-link" href={`/fornecedores/${supplier.id}/editar`}><Edit3 size={15}/>Editar</Link>}</div>
           </article>
         ))}
       </section>
+      {!visibleSuppliers.length&&<div className="empty-inline">Nenhum fornecedor corresponde aos filtros.</div>}
     </>
   );
 }
