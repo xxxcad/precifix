@@ -2,7 +2,7 @@
 /* eslint-disable react-hooks/preserve-manual-memoization -- This legacy calculation workbench intentionally controls memo boundaries around mutable pricing snapshots. */
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { ArrowDown, BarChart3, Check, ChevronDown, ChevronUp, GitCompareArrows, Info, Pencil, Save, Search, Sparkles, X } from "lucide-react";
+import { ArrowDown, BarChart3, Check, ChevronDown, ChevronUp, GitCompareArrows, Info, Pencil, Save, Search, Sparkles } from "lucide-react";
 import { calculatePricing, calculateTargetPrice } from "@/domain/pricing/engine";
 import type { FiscalRuleKey, MarginClassificationRule, MarketplaceKey, MarketplaceRuleSnapshot, MarketplaceShippingRule, RegionKey, RegionPricingResult, ShippingResolution } from "@/domain/pricing/types";
 import { calculateCubicWeightKg, manualShipping, overrideShipping, resolveAmazonShipping, resolveMercadoLivreShipping } from "@/domain/pricing/shipping";
@@ -16,6 +16,7 @@ import { formatMoney, formatPercent } from "@/lib/format";
 import { StatusPill } from "./status-pill";
 import { loadManualPricingHistory, loadProductPricingHistory, saveManualPricingSnapshot, savePricingSnapshot } from "@/app/precificar/actions";
 import { MarketplaceBrand } from "./marketplace-brand";
+import { PricingDetailsModal } from "./pricing-details-modal";
 
 const regionLabels: Record<RegionKey, string> = {
   SP: "São Paulo",
@@ -86,48 +87,6 @@ function ComparisonCard({ scenario, mode, targetMargin }: { scenario: Comparison
       <span className="comparison-tooltip-wide"><small>Receita líquida</small><b>{formatMoney(scenario.result.netRevenue)}</b></span>
     </span>
   </button>;
-}
-
-function PricingDetailsModal({ item, onClose }: { item: SavedPricing; onClose: () => void }) {
-  const selectedRegion = item.region ?? "SP";
-  const regional = item.snapshot?.regions?.[selectedRegion];
-  const input = item.snapshot?.snapshot;
-  const feeBand = item.snapshot?.feeBand;
-  const detail = (label: string, value: string) => <div><span>{label}</span><strong>{value}</strong></div>;
-  return <div className="pricing-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-    <section className="pricing-modal" role="dialog" aria-modal="true" aria-labelledby="pricing-details-title">
-      <div className="pricing-modal-header"><div><span>Precificação salva</span><h2 id="pricing-details-title">{item.sku} · {item.productName}</h2></div><button type="button" aria-label="Fechar detalhes" onClick={onClose}><X size={20} /></button></div>
-      <div className="pricing-detail-grid">
-        {detail("Data", new Date(item.createdAt).toLocaleString("pt-BR"))}
-        {detail("Salva por", item.createdByName)}
-        {detail("Marketplace", item.marketplace)}
-        {detail("Modalidade", item.listingType === "PREMIUM" ? "Premium" : item.listingType === "CLASSICO" ? "Clássico" : "Padrão")}
-        {detail("Região", regionLabels[selectedRegion])}
-        {detail("Preço de venda", formatMoney(item.price))}
-        {detail("Frete", formatMoney(item.freight))}
-        {input?.shippingResolution?.billableWeightKg && detail("Peso considerado", `${input.shippingResolution.billableWeightKg} kg (${input.shippingResolution.weightBasis === "CUBIC" ? "peso cubado" : "peso real"})`)}
-        {detail("Taxa praticada", formatPercent(item.practicedRate ?? feeBand?.percentageRate ?? "0"))}
-        {detail("Faixa tarifária", feeBand?.label ?? "—")}
-        {detail("Rebate informado", Number(item.rebateValue ?? 0) > 0 ? item.rebateType === "PERCENT" ? formatPercent(item.rebateValue ?? "0") : formatMoney(item.rebateValue ?? "0") : "Sem rebate")}
-        {detail("Rebate aplicado", formatMoney(item.appliedRebate ?? regional?.marketplaceRebate ?? "0"))}
-        {detail("Margem líquida", formatMoney(regional?.contributionMarginValue ?? item.marginValue))}
-        {detail("Margem percentual", formatPercent(regional?.contributionMarginPercent ?? item.marginPercent))}
-        {detail("Custo do produto", formatMoney(input?.product.cost ?? regional?.productCost ?? "0"))}
-        {detail("Custo efetivo", formatMoney(regional?.effectiveCost ?? "0"))}
-        {detail("Fornecedor", input?.product.supplierName ?? "—")}
-        {detail("Regra fiscal", input?.product.fiscalRule?.replaceAll("_", " ") ?? "—")}
-        {detail("ICMS entrada", formatPercent(input?.product.inputIcmsRate ?? "0"))}
-        {detail("PIS entrada", formatPercent(input?.product.inputPisRate ?? "0"))}
-        {detail("COFINS entrada", formatPercent(input?.product.inputCofinsRate ?? "0"))}
-        {detail("IPI entrada", formatPercent(input?.product.inputIpiRate ?? "0"))}
-        {detail("Valor ST", formatMoney(input?.product.stAmount ?? "0"))}
-        {detail("ICMS saída", formatMoney(regional?.outputIcms ?? "0"))}
-        {detail("Comissão", formatMoney(regional?.marketplacePercentageFee ?? "0"))}
-        {detail("Tarifa fixa", formatMoney(regional?.marketplaceFixedFee ?? "0"))}
-      </div>
-      {regional?.breakdown && <div className="pricing-modal-breakdown"><h3>Composição completa</h3>{regional.breakdown.map((line) => <div key={line.key}><span>{line.label}{line.rate && <small>{formatPercent(line.rate)}</small>}</span><strong>{formatMoney(line.value)}</strong></div>)}</div>}
-    </section>
-  </div>;
 }
 
 export function PricingWorkbench({ initialProducts = [], childSkusByProduct = {}, marketplaceRules = {}, classifications = marginClassifications, fiscalRules = [], shippingRule = null, amazonShippingRule = null, latestSavedPrices = {} }: { initialProducts?: ReadonlyArray<DemoProduct>; childSkusByProduct?: ProductChildSkuMap; marketplaceRules?: MarketplaceRuleMap; classifications?: MarginClassificationRule[]; fiscalRules?: ManualFiscalRule[]; shippingRule?: MarketplaceShippingRule | null; amazonShippingRule?: MarketplaceShippingRule | null; latestSavedPrices?: LatestSavedPriceMap }) {

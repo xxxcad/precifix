@@ -11,13 +11,11 @@ import type {
   HistoryPageResult,
   MarketplaceRuleCard,
   NewProductHistoryItem,
-  PricingHistoryItem,
   SortDirection,
   SupplierItem,
   ProductChildSkuMap,
 } from "@/lib/data/catalog";
 import { formatMoney, formatPercent } from "@/lib/format";
-import { PricingHistoryList } from "./pricing-history-list";
 import { SortableColumn } from "./sortable-column";
 import { ProductsTable } from "./products-table";
 import { updateMarginClassifications } from "@/app/configuracoes/actions";
@@ -209,16 +207,12 @@ export function MarketplacesPage({ rules }: { rules: MarketplaceRuleCard[] }) {
 type HistorySearch = {
   costQuery: string;
   productQuery: string;
-  pricingQuery: string;
   costPage: number;
   productPage: number;
-  pricingPage: number;
   costSort: string;
   costDirection: SortDirection;
   productSort: string;
   productDirection: SortDirection;
-  pricingSort: string;
-  pricingDirection: SortDirection;
 };
 
 function historyUrl(search: HistorySearch, changes: Partial<HistorySearch>) {
@@ -226,24 +220,20 @@ function historyUrl(search: HistorySearch, changes: Partial<HistorySearch>) {
   const params = new URLSearchParams();
   if (next.costQuery) params.set("costQuery", next.costQuery);
   if (next.productQuery) params.set("productQuery", next.productQuery);
-  if (next.pricingQuery) params.set("pricingQuery", next.pricingQuery);
   if (next.costPage > 1) params.set("costPage", String(next.costPage));
   if (next.productPage > 1) params.set("productPage", String(next.productPage));
-  if (next.pricingPage > 1) params.set("pricingPage", String(next.pricingPage));
   if (next.costSort !== "date") params.set("costSort", next.costSort);
   if (next.costDirection !== "desc") params.set("costDirection", next.costDirection);
   if (next.productSort !== "date") params.set("productSort", next.productSort);
   if (next.productDirection !== "desc") params.set("productDirection", next.productDirection);
-  if (next.pricingSort !== "date") params.set("pricingSort", next.pricingSort);
-  if (next.pricingDirection !== "desc") params.set("pricingDirection", next.pricingDirection);
   const suffix = params.toString();
   return (suffix ? `/historico?${suffix}` : "/historico") as Route;
 }
 
-function historySortHref(search: HistorySearch, list: "cost" | "product" | "pricing", column: string, defaultDirection: SortDirection) {
-  const sortKey = `${list}Sort` as "costSort" | "productSort" | "pricingSort";
-  const directionKey = `${list}Direction` as "costDirection" | "productDirection" | "pricingDirection";
-  const pageKey = `${list}Page` as "costPage" | "productPage" | "pricingPage";
+function historySortHref(search: HistorySearch, list: "cost" | "product", column: string, defaultDirection: SortDirection) {
+  const sortKey = `${list}Sort` as "costSort" | "productSort";
+  const directionKey = `${list}Direction` as "costDirection" | "productDirection";
+  const pageKey = `${list}Page` as "costPage" | "productPage";
   const direction = search[sortKey] === column ? (search[directionKey] === "asc" ? "desc" : "asc") : defaultDirection;
   return historyUrl(search, { [sortKey]: column, [directionKey]: direction, [pageKey]: 1 });
 }
@@ -254,7 +244,7 @@ function HistoryPagination<T>({
   search,
 }: {
   result: HistoryPageResult<T>;
-  pageKey: "costPage" | "productPage" | "pricingPage";
+  pageKey: "costPage" | "productPage";
   search: HistorySearch;
 }) {
   const pages = Math.max(1, Math.ceil(result.total / result.pageSize));
@@ -300,20 +290,16 @@ function HistorySortFields({ search }: { search: HistorySearch }) {
     <input type="hidden" name="costDirection" value={search.costDirection} />
     <input type="hidden" name="productSort" value={search.productSort} />
     <input type="hidden" name="productDirection" value={search.productDirection} />
-    <input type="hidden" name="pricingSort" value={search.pricingSort} />
-    <input type="hidden" name="pricingDirection" value={search.pricingDirection} />
   </>;
 }
 
 export function HistoryPage({
   costHistory,
   productHistory,
-  pricingHistory,
   search,
 }: {
   costHistory: HistoryPageResult<CostChangeHistoryItem>;
   productHistory: HistoryPageResult<NewProductHistoryItem>;
-  pricingHistory: HistoryPageResult<PricingHistoryItem>;
   search: HistorySearch;
 }) {
   return (
@@ -337,12 +323,6 @@ export function HistoryPage({
             value={search.productQuery}
           />
           <input type="hidden" name="productPage" value={search.productPage} />
-          <input
-            type="hidden"
-            name="pricingQuery"
-            value={search.pricingQuery}
-          />
-          <input type="hidden" name="pricingPage" value={search.pricingPage} />
           <input
             aria-label="Pesquisar histórico de custos"
             name="costQuery"
@@ -416,12 +396,6 @@ export function HistoryPage({
           <input type="hidden" name="costQuery" value={search.costQuery} />
           <input type="hidden" name="costPage" value={search.costPage} />
           <input
-            type="hidden"
-            name="pricingQuery"
-            value={search.pricingQuery}
-          />
-          <input type="hidden" name="pricingPage" value={search.pricingPage} />
-          <input
             aria-label="Pesquisar histórico de novos produtos"
             name="productQuery"
             defaultValue={search.productQuery}
@@ -476,62 +450,6 @@ export function HistoryPage({
         <HistoryPagination
           result={productHistory}
           pageKey="productPage"
-          search={search}
-        />
-      </section>
-      <section className="wide-card history-section">
-        <div className="card-heading">
-          <div>
-            <h2>Histórico de precificação</h2>
-            <p>
-              Precificações salvas pelo usuário, com frete e margem calculada.
-            </p>
-          </div>
-        </div>
-        <form className="history-filter" method="get">
-          <HistorySortFields search={search} />
-          <input type="hidden" name="costQuery" value={search.costQuery} />
-          <input type="hidden" name="costPage" value={search.costPage} />
-          <input
-            type="hidden"
-            name="productQuery"
-            value={search.productQuery}
-          />
-          <input type="hidden" name="productPage" value={search.productPage} />
-          <input
-            aria-label="Pesquisar histórico de precificação"
-            name="pricingQuery"
-            defaultValue={search.pricingQuery}
-            placeholder="Buscar por SKU ou nome do produto"
-          />
-          <button className="secondary-button" type="submit">
-            Pesquisar
-          </button>
-          {search.pricingQuery && (
-            <Link
-              className="text-link"
-              href={historyUrl(search, { pricingQuery: "", pricingPage: 1 })}
-            >
-              Limpar
-            </Link>
-          )}
-        </form>
-        <PricingHistoryList
-          databaseItems={pricingHistory.items}
-          sort={search.pricingSort}
-          direction={search.pricingDirection}
-          links={{
-            product: historySortHref(search, "pricing", "product", "asc"),
-            marketplace: historySortHref(search, "pricing", "marketplace", "asc"),
-            price: historySortHref(search, "pricing", "price", "desc"),
-            shipping: historySortHref(search, "pricing", "shipping", "desc"),
-            margin: historySortHref(search, "pricing", "margin", "desc"),
-            date: historySortHref(search, "pricing", "date", "desc"),
-          }}
-        />
-        <HistoryPagination
-          result={pricingHistory}
-          pageKey="pricingPage"
           search={search}
         />
       </section>

@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { Boxes, Building2, Calculator, Clock3, Database, Gauge, Landmark, RefreshCcw, ReceiptText, Settings2, ShieldCheck, Users } from "lucide-react";
+import { Archive, Boxes, Building2, Calculator, Clock3, Database, Gauge, Landmark, RefreshCcw, ReceiptText, Settings2, ShieldCheck, Users } from "lucide-react";
 
 export type NavigationRole = "viewer" | "analyst" | "admin";
 export type NavigationItem = { href: string; label: string; icon: LucideIcon; exact?: boolean; roles?: readonly NavigationRole[] };
@@ -9,6 +9,7 @@ export const navigationGroups: readonly NavigationGroup[] = [
   { id: "pricing", label: "Precificação", icon: Calculator, items: [
     { href: "/", label: "Dashboard", icon: Gauge, exact: true },
     { href: "/precificar", label: "Precificar", icon: Calculator },
+    { href: "/precificacoes-salvas", label: "Precificações Salvas", icon: Archive },
     { href: "/marketplaces", label: "Marketplaces", icon: Landmark },
     { href: "/regras-fiscais", label: "Regras Fiscais", icon: ReceiptText },
     { href: "/historico", label: "Histórico", icon: Clock3 },

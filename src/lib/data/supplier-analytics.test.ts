@@ -56,11 +56,11 @@ describe("calculateProductScenarioAverage", () => {
     });
   });
 
-  it("não classifica produto sem precificação nos quatro canais", () => {
+  it("calcula a média usando somente os canais disponíveis", () => {
     expect(calculateProductScenarioAverage(product({
       ML_CLASSICO: metric(100, 10, .1),
       SHOPEE: metric(100, 30, .3),
       AMAZON: metric(100, 40, .4),
-    }))).toBeUndefined();
+    }))).toMatchObject({ averageValue: 80 / 3, averagePercent: .8 / 3 });
   });
 });
